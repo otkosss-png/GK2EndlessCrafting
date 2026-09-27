@@ -20,6 +20,21 @@ namespace GK2EndlessCrafting
         private static readonly FieldInfo _plusField =
             AccessTools.Field(typeof(UIBaseCraftSelectionWindow), "plusCraftButton");
 
+        // LazyUIEvent-поля копируются Instantiate вместе с компонентом; их тоже надо
+        // обнулить, иначе клик по «∞» дёрнет «+». onClick (Button) чистим отдельно.
+        private static readonly FieldInfo[] _lazyEventFields =
+        {
+            AccessTools.Field(typeof(LazyButton), "onDown"),
+            AccessTools.Field(typeof(LazyButton), "onNotInteractableDown"),
+            AccessTools.Field(typeof(LazyButton), "onUp"),
+            AccessTools.Field(typeof(LazyButton), "onNotInteractableUp"),
+            AccessTools.Field(typeof(LazyButton), "onEnter"),
+            AccessTools.Field(typeof(LazyButton), "onNotInteractableEnter"),
+            AccessTools.Field(typeof(LazyButton), "onExit"),
+            AccessTools.Field(typeof(LazyButton), "onNotInteractableExit"),
+            AccessTools.Field(typeof(LazyButton), "onNotInteractableClick"),
+        };
+
         private static bool ModOn
             => Plugin.Mod != null && (Plugin.Mod.Enabled == null || Plugin.Mod.Enabled.Value);
 
@@ -50,6 +65,7 @@ namespace GK2EndlessCrafting
 
                 // У клона могли скопироваться сериализованные слушатели «+».
                 btn.onClick.RemoveAllListeners();
+                ClearLazyEvents(btn);
 
                 var prt = plus.transform as RectTransform;
                 var rt = btn.transform as RectTransform;
@@ -93,13 +109,19 @@ namespace GK2EndlessCrafting
                 if (_labels.TryGetValue(key, out var label) && label != null)
                     label.color = on ? Color.white : GameStyle.Text;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Trace("sync: " + ex.Message);
+            }
         }
 
+        // Вызывается postfix'ами Hide: базового UIBaseCraftSelectionWindow и конкретных
+        // UIFuelCraftWindow/UISingleCraftWindow. После Hide окно лишь деактивируется,
+        // поэтому созданные объекты надо реально уничтожить (не только очистить
+        // словари) — иначе повторное открытие накопит клоны. Метод идемпотентен,
+        // повторный вызов (базовый + производный postfix) безопасен.
         internal static void Clear()
         {
-            // Hide() лишь деактивирует окно, поэтому созданные дочерние объекты надо
-            // реально уничтожить — иначе повторное открытие их накопит.
             foreach (var kv in _buttons)
                 if (kv.Value != null) UnityEngine.Object.Destroy(kv.Value.gameObject);
             _buttons.Clear();
@@ -122,6 +144,27 @@ namespace GK2EndlessCrafting
             {
                 Plugin.Log?.LogWarning("endless: toggle: " + ex.Message);
             }
+        }
+
+        private static void ClearLazyEvents(LazyButton btn)
+        {
+            if (btn == null) return;
+            foreach (var f in _lazyEventFields)
+            {
+                if (f == null) continue;
+                try
+                {
+                    var evt = f.GetValue(btn) as UnityEngine.Events.UnityEvent;
+                    if (evt != null) evt.RemoveAllListeners();
+                }
+                catch { }
+            }
+        }
+
+        private static void Trace(string msg)
+        {
+            if (Plugin.Mod != null && Plugin.Mod.DebugLog != null && Plugin.Mod.DebugLog.Value)
+                Plugin.Log?.LogInfo("endless: " + msg);
         }
 
         private static TextMeshProUGUI BuildLabel(LazyButton btn)
