@@ -114,7 +114,7 @@ namespace GK2EndlessCrafting
                     rt.anchorMax = prt.anchorMax;
                     rt.pivot = prt.pivot;
                     rt.sizeDelta = prt.sizeDelta;
-                    rt.anchoredPosition = prt.anchoredPosition + new Vector2(prt.sizeDelta.x + 6f, 0f);
+                    PlaceButton(btn, plus);
                 }
 
                 // Клон сохраняет СВОЙ спрайт — это гарантированно вид соседней игровой
@@ -192,6 +192,11 @@ namespace GK2EndlessCrafting
                 //     спрайт ∞ и заменяем TMP-подпись картинкой (дёшево: спрайт кэшируется).
                 ApplyGlyph(btn, key);
 
+                // 1c) Раскладка: другие моды (Craft Max) клонируют ту же кнопку «+» и ставят
+                //     свою справа от неё — встаём правее их кнопки, чтобы не накладываться.
+                //     Их кнопка может появиться позже, поэтому проверяем при каждом sync.
+                PlaceButton(btn, _plusField != null ? _plusField.GetValue(window) as LazyButton : null);
+
                 // 2) Цвет. Тинтуем ТОЛЬКО фон; подпись — родной цвет глифа (выкл) или
                 //    белый на акцентном фоне (вкл), чтобы оставалась читаемой.
                 bool on = Plugin.Registry != null && Plugin.Registry.IsOn(StationKey.Of(window));
@@ -236,6 +241,48 @@ namespace GK2EndlessCrafting
             _icons.Clear();
             _windows.Clear();
             _lastSig.Clear();
+        }
+
+        // Наша кнопка «∞» встаёт сразу справа от кнопки «+», но если рядом клонировал свою
+        // кнопку другой мод (Craft Max: имя «GK2CraftMax_Button»), уходим правее неё.
+        private const float Gap = 6f;
+        private const string OtherModButtonName = "GK2CraftMax_Button";
+
+        private static void PlaceButton(LazyButton btn, LazyButton plus)
+        {
+            try
+            {
+                var rt = btn != null ? btn.transform as RectTransform : null;
+                var prt = plus != null ? plus.transform as RectTransform : null;
+                if (rt == null || prt == null) return;
+
+                var other = FindSiblingButton(prt, OtherModButtonName);
+                var otherRt = other != null ? other.transform as RectTransform : null;
+                float x = CraftButtonLayout.NextX(
+                    prt.anchoredPosition.x, prt.sizeDelta.x,
+                    otherRt != null ? (float?)otherRt.anchoredPosition.x : null,
+                    otherRt != null ? otherRt.sizeDelta.x : 0f,
+                    Gap);
+
+                var want = new Vector2(x, prt.anchoredPosition.y);
+                if ((rt.anchoredPosition - want).sqrMagnitude > 0.01f) rt.anchoredPosition = want;
+            }
+            catch (Exception ex) { Trace("place: " + ex.Message); }
+        }
+
+        // Кнопка другого мода рядом с «+» (по имени; у клона бывает суффикс «(Clone)»).
+        private static LazyButton FindSiblingButton(RectTransform plus, string name)
+        {
+            var parent = plus != null ? plus.parent : null;
+            if (parent == null || string.IsNullOrEmpty(name)) return null;
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                var c = parent.GetChild(i);
+                if (c == null || c == plus.transform) continue;
+                if (c.name == name || c.name.StartsWith(name, StringComparison.Ordinal))
+                    return c.GetComponent<LazyButton>();
+            }
+            return null;
         }
 
         private static void Toggle(UIBaseCraftSelectionWindow window)

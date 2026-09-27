@@ -3,7 +3,9 @@ using GK2.Framework;
 
 namespace GK2EndlessCrafting
 {
-    // Настройки появляются в игровом меню Mods (GK2 Mod Framework).
+    // Настройки мода в игровом меню Mods (GK2 Mod Framework).
+    // Строки здесь — АНГЛИЙСКИЕ заглушки: они показываются, только если для текущего языка
+    // нет файла локализации. Русские тексты лежат в ModLocalization (en/ru json).
     internal sealed class Mod : Gk2ModBase
     {
         internal const string DefaultLanguage = "en";
@@ -15,7 +17,7 @@ namespace GK2EndlessCrafting
             "otkosss.gk2.endlesscrafting",
             "GK2 Endless Crafting",
             "otkosss",
-            "1.0.5",
+            "1.0.7",
             "Stations keep repeating the selected recipe until you switch it off.",
             false,
             false);
@@ -31,13 +33,14 @@ namespace GK2EndlessCrafting
         {
             var s = context.Settings;
             Enabled = s.AddToggle("General", "Enabled", DefaultEnabled,
-                "Кнопка «∞»", "Показывать кнопку бесконечного крафта в окне станции", 10);
+                "Enabled", "Show the endless crafting button in the station window.", 10);
             PollMs = s.AddIntSlider("General", "PollMs", DefaultPollMs, 100, 5000,
-                "Проверка станций, мс", "Резервный опрос очереди (мс); 250 по умолчанию", 50, 20);
+                "Station scan interval (ms)", "How often the mod re-checks the open station; 250 ms works for most setups.",
+                50, 20);
             Language = s.AddDropdown("General", "Language", DefaultLanguage, new[] { "auto", "en", "ru" },
-                "Language / Язык", "en, ru, auto (system)", 10);
+                "Language", "en, ru, auto (system language).", 10);
             DebugLog = s.AddToggle("General", "DebugLog", DefaultDebugLog,
-                "Отладочный лог", "", 5);
+                "Verbose log", "Write detailed diagnostics to the BepInEx log.", 5);
         }
     }
 }

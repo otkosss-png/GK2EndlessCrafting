@@ -7,7 +7,7 @@ using GK2EndlessCrafting.Core;
 namespace GK2EndlessCrafting
 {
     [BepInDependency("ru.superman4eg.gk2.framework")]
-    [BepInPlugin(Guid, "GK2 Endless Crafting", "1.0.5")]
+    [BepInPlugin(Guid, "GK2 Endless Crafting", "1.0.6")]
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "otkosss.gk2.endlesscrafting";
@@ -33,6 +33,10 @@ namespace GK2EndlessCrafting
                 Logger.LogWarning("GK2 Framework register failed, using local config: " + ex.Message);
             }
             EnsureSettings();
+
+            // Локализация настроек (en/ru) для GK2 Framework: пишем файлы сами — так они
+            // есть и при установке через Workshop-загрузчик.
+            ModLocalization.EnsureFiles();
 
             Lang = ResolveLanguage(Mod.Language.Value);
 
