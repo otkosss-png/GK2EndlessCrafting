@@ -147,6 +147,8 @@ namespace GK2EndlessCrafting
                     // раннер поставит крафт с тем же paramsData, что и клик по «+».
                     StationKey.CaptureParams(id, StationKey.DataOf(window)?.ParamsData);
                 }
+                // Переживание перезапуска: пишем состояние реестра в файл слота.
+                Plugin.SaveRegistry();
                 Sync(window);
             }
             catch (Exception ex)

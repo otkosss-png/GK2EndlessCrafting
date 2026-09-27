@@ -18,6 +18,10 @@ namespace GK2EndlessCrafting
         private static bool _running = true;
         private float _timer;
 
+        // Проверка смены слота сейва (загрузка другого сохранения) — не чаще раза в секунду.
+        private const float SlotCheckSeconds = 1f;
+        private float _slotTimer;
+
         // Станции, по событиям которых надо немедленно долить крафт (следующий кадр).
         private static readonly HashSet<string> _dirty = new HashSet<string>();
         // Активные подписки на CraftComponent по stationId.
@@ -67,6 +71,15 @@ namespace GK2EndlessCrafting
             if (!_running) return;
             if (Plugin.Mod == null || Plugin.Mod.Enabled == null || !Plugin.Mod.Enabled.Value) return;
 
+            // Слот сейва проверяем ДО раннего выхода по пустому реестру: именно сюда
+            // приходит первичная загрузка файла, когда реестр ещё пуст.
+            _slotTimer += Time.unscaledDeltaTime;
+            if (_slotTimer >= SlotCheckSeconds)
+            {
+                _slotTimer = 0f;
+                CheckSlot();
+            }
+
             if (Plugin.Registry == null || Plugin.Registry.Count == 0)
             {
                 if (_subs.Count > 0) UnsubscribeAll();
@@ -93,6 +106,22 @@ namespace GK2EndlessCrafting
             var ids = new List<string>(_dirty);
             _dirty.Clear();
             foreach (var id in ids) TopUp(id);
+        }
+
+        // Смена слота сейва (загрузили другое сохранение) → перечитать файл и сбросить
+        // подписки/очереди прошлого слота. Plugin.SlotName — источник правды: его же
+        // выставляет Plugin.LoadForCurrentSlot/SaveRegistry.
+        private static void CheckSlot()
+        {
+            if (Plugin.Registry == null) return;
+            var slot = Plugin.ResolveSlot();
+            if (string.IsNullOrEmpty(slot)) return; // MainGame ещё не создан — ждём
+            if (string.Equals(slot, Plugin.SlotName, StringComparison.Ordinal)) return;
+
+            Plugin.SlotName = slot;
+            SaveSlotStore.Load(Plugin.Registry, slot);
+            UnsubscribeAll();
+            _dirty.Clear();
         }
 
         private static void SyncSubscriptions()

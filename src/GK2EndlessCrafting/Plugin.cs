@@ -16,6 +16,9 @@ namespace GK2EndlessCrafting
         internal static Lang Lang = Lang.En;
         internal static EndlessRegistry Registry = new EndlessRegistry();
 
+        // Слот текущего сейва (SaveSlotData.slotName). null/пусто — MainGame ещё не создан.
+        internal static string SlotName;
+
         private void Awake()
         {
             Log = Logger;
@@ -36,9 +39,37 @@ namespace GK2EndlessCrafting
             try { new HarmonyLib.Harmony(Guid).PatchAll(typeof(Plugin).Assembly); }
             catch (Exception ex) { Logger.LogWarning("harmony patch failed: " + ex.Message); }
 
+            // Если MainGame уже существует — читаем сохранённые станции сразу.
+            // Обычно на Awake его ещё нет: слот подхватит EndlessRunner при загрузке сейва.
+            LoadForCurrentSlot();
+
             EndlessRunner.Start();
 
             Logger.LogInfo("GK2 Endless Crafting " + Version + " loaded.");
+        }
+
+        // Текущий слот сейва. Единственный источник правды о «загруженном» слоте:
+        // EndlessRunner перечитывает файл, когда это значение меняется.
+        internal static string ResolveSlot()
+        {
+            try { return MainGame.Instance?.SaveSlotData?.slotName; }
+            catch { return null; }
+        }
+
+        internal static void LoadForCurrentSlot()
+        {
+            var slot = ResolveSlot();
+            if (string.IsNullOrEmpty(slot)) return;
+            SlotName = slot;
+            SaveSlotStore.Load(Registry, slot);
+        }
+
+        // Вызывается после переключения «∞»: слот берём свежий, если он уже виден.
+        internal static void SaveRegistry()
+        {
+            var slot = ResolveSlot();
+            if (!string.IsNullOrEmpty(slot)) SlotName = slot;
+            SaveSlotStore.Save(Registry, SlotName);
         }
 
         private void EnsureSettings()
