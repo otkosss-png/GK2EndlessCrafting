@@ -16,6 +16,10 @@ namespace GK2EndlessCrafting
     {
         private static readonly Dictionary<int, LazyButton> _buttons = new Dictionary<int, LazyButton>();
         private static readonly Dictionary<int, TextMeshProUGUI> _labels = new Dictionary<int, TextMeshProUGUI>();
+        // Открытые окна крафта — чтобы пересинхронизировать кнопку «∞» при смене
+        // режима из другого места (маркер строки очереди), а не только при открытии.
+        private static readonly Dictionary<int, UIBaseCraftSelectionWindow> _windows =
+            new Dictionary<int, UIBaseCraftSelectionWindow>();
 
         private static readonly FieldInfo _plusField =
             AccessTools.Field(typeof(UIBaseCraftSelectionWindow), "plusCraftButton");
@@ -44,6 +48,7 @@ namespace GK2EndlessCrafting
             try
             {
                 int key = window.GetInstanceID();
+                _windows[key] = window;
                 if (_buttons.TryGetValue(key, out var existing) && existing != null)
                 {
                     existing.gameObject.SetActive(ModOn);
@@ -115,6 +120,20 @@ namespace GK2EndlessCrafting
             }
         }
 
+        // Пересинхронизировать кнопки «∞» во всех открытых окнах крафта. Вызывается
+        // из EndlessMode.TurnOn/TurnOff, чтобы подсветка не отставала при смене
+        // режима из строки очереди.
+        internal static void SyncAll()
+        {
+            if (_windows.Count == 0) return;
+            foreach (var key in new List<int>(_windows.Keys))
+            {
+                var w = _windows[key];
+                if (w == null) { _windows.Remove(key); continue; }
+                Sync(w);
+            }
+        }
+
         // Вызывается postfix'ами Hide: базового UIBaseCraftSelectionWindow и конкретных
         // UIFuelCraftWindow/UISingleCraftWindow. После Hide окно лишь деактивируется,
         // поэтому созданные объекты надо реально уничтожить (не только очистить
@@ -126,6 +145,7 @@ namespace GK2EndlessCrafting
                 if (kv.Value != null) UnityEngine.Object.Destroy(kv.Value.gameObject);
             _buttons.Clear();
             _labels.Clear();
+            _windows.Clear();
         }
 
         private static void Toggle(UIBaseCraftSelectionWindow window)

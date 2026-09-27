@@ -25,4 +25,17 @@ namespace GK2EndlessCrafting
             QueueRowMarker.Sync(__instance);
         }
     }
+
+    // Ключевой хук: ни Redraw, ни HideSelection не вызываются при смене IsInfinite
+    // (сеттер дёргает OnCountChanged, который у виджета ведёт только в UpdateCount).
+    // Поэтому маркер пересинхронизируем прямо на сеттере флага.
+    [HarmonyPatch(typeof(CraftElementBase), "set_IsInfinite")]
+    internal static class CraftElementIsInfinitePatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(CraftElementBase __instance)
+        {
+            QueueRowMarker.SyncAll();
+        }
+    }
 }

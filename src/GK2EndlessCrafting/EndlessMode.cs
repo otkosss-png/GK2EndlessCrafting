@@ -14,6 +14,7 @@ namespace GK2EndlessCrafting
             StationKey.CaptureParams(stationId, capturedParams);
             EndlessRunner.ApplyNow(stationId);
             Plugin.SaveRegistry();
+            Notify();
         }
 
         internal static void TurnOff(string stationId)
@@ -22,6 +23,16 @@ namespace GK2EndlessCrafting
             Plugin.Registry.Clear(stationId);
             EndlessRunner.ClearNative(stationId);
             Plugin.SaveRegistry();
+            Notify();
+        }
+
+        // Смена режима должна отражаться СРАЗУ и на кнопке окна крафта, и на маркерах
+        // строк очереди (смена флага, вообще говоря, сама зовёт SyncAll через патч
+        // set_IsInfinite, но вызываем явно — на случай, если флаг не менялся).
+        private static void Notify()
+        {
+            EndlessButton.SyncAll();
+            QueueRowMarker.SyncAll();
         }
     }
 }
