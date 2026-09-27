@@ -15,8 +15,8 @@ namespace GK2EndlessCrafting
         // Станции, по которым уже предупредили об отсутствии CraftComponent
         // (один warning на станцию, без спама каждый опрос).
         private static readonly HashSet<string> _resolveWarned = new HashSet<string>();
-        // Последнее время warning'а по ключу (станция или "__tick__") — троттлинг
-        // повторяющихся исключений, чтобы сломанная станция не заливала лог.
+        // Последнее время warning'а по ключу (станция|тип|сообщение или "__tick__")
+        // — троттлинг повторяющихся исключений. Разные ошибки логируются отдельно.
         private static readonly Dictionary<string, float> _errorWarnedAt = new Dictionary<string, float>();
         private const float ErrorWarnCooldown = 60f;
 
@@ -61,43 +61,44 @@ namespace GK2EndlessCrafting
             {
                 foreach (var e in Plugin.Registry.All())
                 {
-                    CraftComponent craft;
                     try
                     {
-                        craft = StationKey.Resolve(e.Key);
-                    }
-                    catch (Exception ex)
-                    {
-                        WarnThrottled(e.Key, "resolve " + e.Key + ": " + ex.Message);
-                        continue;
-                    }
+                        var wgo = StationKey.ResolveWgo(e.Key);
+                        if (wgo == null) { WarnResolveOnce(e.Key); continue; }
 
-                    if (craft == null)
-                    {
-                        WarnResolveOnce(e.Key);
-                        continue;
-                    }
-                    _resolveWarned.Remove(e.Key); // станция снова доступна
+                        var craft = wgo.CraftComponent;
+                        if (craft == null) { WarnResolveOnce(e.Key); continue; }
+                        _resolveWarned.Remove(e.Key); // станция снова доступна
 
-                    try
-                    {
                         if (craft.HasCraftsInQueue) continue;
 
                         var def = FindRecipe(craft, e.Value);
                         if (def == null) { Trace("station " + e.Key + ": recipe " + e.Value + " not found"); continue; }
 
-                        craft.AddToQueue(new CraftElement(def), false, -1);
+                        // AddToQueue -> GetStartCraftStatus -> CheckWorkerDependentValues
+                        // дерефает paramsData.customRes, поэтому paramsData обязателен
+                        // (см. fix round 2). Сначала — снятые с окна params, иначе строим сами.
+                        var paramsData = StationKey.ParamsFor(e.Key) ?? StationKey.BuildParams(wgo, def);
+                        if (paramsData == null)
+                        {
+                            WarnThrottled(e.Key + "|params", "station " + e.Key
+                                + ": cannot build CraftParamsData for " + e.Value);
+                            continue;
+                        }
+
+                        craft.AddToQueue(new CraftElement(def, paramsData), false, -1);
                         Trace("station " + e.Key + ": re-queued " + e.Value);
                     }
                     catch (Exception ex)
                     {
-                        WarnThrottled(e.Key, "tick " + e.Key + ": " + ex.Message);
+                        WarnThrottled(e.Key + "|" + ex.GetType().Name + "|" + ex.Message,
+                            "tick " + e.Key + ": " + Describe(ex));
                     }
                 }
             }
             catch (Exception ex)
             {
-                WarnThrottled("__tick__", "tick: " + ex.Message);
+                WarnThrottled("__tick__", "tick: " + Describe(ex));
             }
         }
 
@@ -133,6 +134,17 @@ namespace GK2EndlessCrafting
             if (_errorWarnedAt.TryGetValue(key, out var t) && now - t < ErrorWarnCooldown) return;
             _errorWarnedAt[key] = now;
             Plugin.Log?.LogWarning("endless: " + msg + " (repeats suppressed for " + (int)ErrorWarnCooldown + "s)");
+        }
+
+        // Полный текст исключения: тип, message, стек; плюс InnerException — без этого
+        // невозможно понять, какой член был null.
+        private static string Describe(Exception ex)
+        {
+            if (ex == null) return "(null)";
+            var text = ex.ToString();
+            if (ex.InnerException != null)
+                text += " | INNER: " + ex.InnerException.ToString();
+            return text;
         }
 
         private static void Trace(string msg)

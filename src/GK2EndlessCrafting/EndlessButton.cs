@@ -136,8 +136,17 @@ namespace GK2EndlessCrafting
                 var recipe = StationKey.RecipeIdOf(window);
                 if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(recipe)) return;
 
-                if (Plugin.Registry.IsOn(id)) Plugin.Registry.Clear(id);
-                else Plugin.Registry.Set(id, recipe);
+                if (Plugin.Registry.IsOn(id))
+                {
+                    Plugin.Registry.Clear(id);
+                }
+                else
+                {
+                    Plugin.Registry.Set(id, recipe);
+                    // Снимаем params ровно в тот момент, когда их посчитала игра:
+                    // раннер поставит крафт с тем же paramsData, что и клик по «+».
+                    StationKey.CaptureParams(id, StationKey.DataOf(window)?.ParamsData);
+                }
                 Sync(window);
             }
             catch (Exception ex)
