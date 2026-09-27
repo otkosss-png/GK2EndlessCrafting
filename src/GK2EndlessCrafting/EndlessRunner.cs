@@ -103,7 +103,8 @@ namespace GK2EndlessCrafting
                 if (craft == null) return;
                 var queue = craft.CraftElementsQueue;
                 if (queue == null) return;
-                foreach (var el in queue)
+                // Снапшот: set_IsInfinite дёргает OnCountChanged, подписчик может изменить очередь.
+                foreach (var el in new List<CraftElementBase>(queue))
                     if (el != null) el.IsInfinite = false;
                 Trace("station " + stationId + ": infinite off");
             }
@@ -148,7 +149,8 @@ namespace GK2EndlessCrafting
                     Trace("station " + stationId + ": enqueued " + recipe);
                 }
 
-                foreach (var el in queue)
+                // Снапшот: set_IsInfinite дёргает OnCountChanged, подписчик может изменить очередь.
+                foreach (var el in new List<CraftElementBase>(queue))
                     if (el != null && !el.IsInfinite) el.IsInfinite = true;
             }
             catch (Exception ex)
