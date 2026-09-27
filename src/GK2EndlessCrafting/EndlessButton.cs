@@ -16,6 +16,9 @@ namespace GK2EndlessCrafting
     {
         private static readonly Dictionary<int, LazyButton> _buttons = new Dictionary<int, LazyButton>();
         private static readonly Dictionary<int, TextMeshProUGUI> _labels = new Dictionary<int, TextMeshProUGUI>();
+        // Родной цвет глифа «+» (для выкл-состояния), чтобы Sync мог вернуть его.
+        private static readonly Dictionary<int, Color> _labelColors = new Dictionary<int, Color>();
+        private const char InfinityChar = '\u221E';
         // Открытые окна крафта — чтобы пересинхронизировать кнопку «∞» при смене
         // режима из другого места (маркер строки очереди), а не только при открытии.
         private static readonly Dictionary<int, UIBaseCraftSelectionWindow> _windows =
@@ -100,19 +103,32 @@ namespace GK2EndlessCrafting
                     }
                 }
 
+                // Считываем стиль РОДНОГО глифа «+» (TMP) ДО удаления детей — чтобы наш
+                // «∞» выглядел так же (шрифт/материал/размер/цвет).
+                var srcGlyph = btn.GetComponentInChildren<TextMeshProUGUI>(true);
+                var srcFont = srcGlyph != null ? srcGlyph.font : null;
+                var srcMat = srcGlyph != null ? srcGlyph.fontSharedMaterial : null;
+                var srcSize = srcGlyph != null ? srcGlyph.fontSize : 0f;
+                var srcColor = srcGlyph != null ? srcGlyph.color : Color.white;
+
+                // Убираем ВСЕ дочерние визуалы клона (родной «+» — TMP и/или Image),
+                // иначе на кнопке окажутся два глифа. Фон (targetGraphic) сохраняем.
+                int removed = RemoveChildVisuals(btn);
+
                 // Отключаем цветовые переходы: иначе DoStateTransition сбрасывает подсветку.
                 var selectable = btn as Selectable;
                 if (selectable != null) selectable.transition = Selectable.Transition.None;
 
-                var label = BuildLabel(btn, prt);
+                var label = BuildLabel(btn, prt, srcFont, srcMat, srcSize, srcColor);
                 btn.onClick.AddListener(() => Toggle(window));
 
                 _buttons[key] = btn;
                 _labels[key] = label;
+                _labelColors[key] = label.color;
                 Sync(window);
 
                 // Одноразовая диагностика внешнего вида кнопки (на каждую созданную кнопку).
-                LogButtonCreated(srcSprite, cloneImg, label);
+                LogButtonCreated(srcSprite, cloneImg, label, removed);
             }
             catch (Exception ex)
             {
@@ -129,12 +145,13 @@ namespace GK2EndlessCrafting
                 if (!_buttons.TryGetValue(key, out var btn) || btn == null) return;
 
                 bool on = Plugin.Registry != null && Plugin.Registry.IsOn(StationKey.Of(window));
-                // Тинтуем ТОЛЬКО фон кнопки; подпись «∞» всегда белая — читается и на
-                // акцентном фоне (вкл), и на родном спрайте кнопки (выкл).
+                // Тинтуем ТОЛЬКО фон кнопки. Подпись: родной цвет глифа (как у «+») в
+                // выкл-состоянии и белый на акцентном фоне (вкл) — чтобы оставалась видна.
                 var img = btn.targetGraphic as Image;
                 if (img != null) img.color = on ? GameStyle.Accent : Color.white;
                 if (_labels.TryGetValue(key, out var label) && label != null)
-                    label.color = Color.white;
+                    label.color = on ? Color.white
+                        : (_labelColors.TryGetValue(key, out var c) ? c : Color.white);
             }
             catch (Exception ex)
             {
@@ -167,6 +184,7 @@ namespace GK2EndlessCrafting
                 if (kv.Value != null) UnityEngine.Object.Destroy(kv.Value.gameObject);
             _buttons.Clear();
             _labels.Clear();
+            _labelColors.Clear();
             _windows.Clear();
         }
 
@@ -211,21 +229,72 @@ namespace GK2EndlessCrafting
                 Plugin.Log?.LogInfo("endless: " + msg);
         }
 
-        private static TextMeshProUGUI BuildLabel(LazyButton btn, RectTransform srcRect)
+        // Убирает все дочерние визуалы клона (родной глиф «+» — TMP и/или Image).
+        // Фон (targetGraphic и его ветку) сохраняем. Возвращает число удалённых.
+        private static int RemoveChildVisuals(LazyButton btn)
         {
-            var label = btn.GetComponentInChildren<TextMeshProUGUI>(true);
-            if (label == null)
+            var parent = btn != null ? btn.transform : null;
+            if (parent == null) return 0;
+            var keep = btn.targetGraphic != null ? btn.targetGraphic.transform : null;
+            var children = new List<Transform>(parent.childCount);
+            for (int i = 0; i < parent.childCount; i++) children.Add(parent.GetChild(i));
+            int removed = 0;
+            foreach (var child in children)
             {
-                // У «+»/«−» нет текстового узла — рисуем «∞» поверх родного спрайта
-                // кнопки (спрайт НЕ подменяем). Размер шрифта — по высоте кнопки.
-                float h = srcRect != null ? Mathf.Abs(srcRect.rect.height) : 0f;
-                int size = h > 1f ? Mathf.Clamp(Mathf.RoundToInt(h * 0.8f), 14, 40) : 24;
-                label = UiFactory.Label("Label", btn.transform, EndlessText.Infinity(Plugin.Lang), size,
-                    TextAlignmentOptions.Center, Color.white);
+                if (child == null) continue;
+                // Пропускаем ветку фона (сам targetGraphic или его предок).
+                if (keep != null && (child == keep || keep.IsChildOf(child))) continue;
+                UnityEngine.Object.Destroy(child.gameObject);
+                removed++;
             }
-            else
+            return removed;
+        }
+
+        // Шрифт, который реально умеет рисовать «∞». Лучший — родной шрифт глифа «+»
+        // (тогда «∞» выглядит как соседний «+»); иначе GameStyle (им же рисуется
+        // маркер строки очереди, где «∞» отображается корректно); иначе — любой
+        // TMP-шрифт сцены с этим глифом.
+        private static TMP_FontAsset PickInfinityFont(TMP_FontAsset source)
+        {
+            if (CanRenderInfinity(source)) return source;
+            var gs = GameStyle.Font;
+            if (CanRenderInfinity(gs)) return gs;
+            try
             {
-                label.text = EndlessText.Infinity(Plugin.Lang);
+                foreach (var t in Resources.FindObjectsOfTypeAll<TMP_Text>())
+                    if (t != null && t.font != null && CanRenderInfinity(t.font)) return t.font;
+            }
+            catch { }
+            try { Plugin.Log?.LogWarning("endless: no TMP font with U+221E found; using GameStyle font"); }
+            catch { }
+            return gs;
+        }
+
+        private static bool CanRenderInfinity(TMP_FontAsset f)
+        {
+            if (f == null) return false;
+            try { return f.HasCharacter((int)InfinityChar); }
+            catch { return true; } // при сомнении не блокируем
+        }
+
+        private static TextMeshProUGUI BuildLabel(LazyButton btn, RectTransform srcRect,
+            TMP_FontAsset srcFont, Material srcMat, float srcSize, Color srcColor)
+        {
+            float h = srcRect != null ? Mathf.Abs(srcRect.rect.height) : 0f;
+            int autoSize = h > 1f ? Mathf.Clamp(Mathf.RoundToInt(h * 0.8f), 14, 40) : 24;
+            int size = srcSize > 1f ? Mathf.RoundToInt(srcSize) : autoSize;
+
+            var label = UiFactory.Label("Label", btn.transform, EndlessText.Infinity(Plugin.Lang), size,
+                TextAlignmentOptions.Center, srcColor);
+
+            // Шрифт+материал пары: родной глиф «+» → GameStyle → любой шрифт сцены с ∞.
+            var font = PickInfinityFont(srcFont);
+            if (font != null)
+            {
+                label.font = font; // TMP сам подставит материал этого шрифта
+                if (font == srcFont && srcMat != null) label.fontSharedMaterial = srcMat;
+                else if (font == GameStyle.Font && GameStyle.FontMaterial != null)
+                    label.fontSharedMaterial = GameStyle.FontMaterial;
             }
 
             // Подпись на весь rect кнопки, по центру, без смещений и клиппинга —
@@ -245,20 +314,25 @@ namespace GK2EndlessCrafting
         }
 
         // Одноразовый диагностический лог (Info) на каждую созданную кнопку: какой
-        // спрайт был у источника, какой применили, и геометрия/шрифт подписи. Чтобы
-        // регрессия вида «кнопка = чужая иконка» ловилась из лога.
-        private static void LogButtonCreated(Sprite srcSprite, Image cloneImg, TextMeshProUGUI label)
+        // спрайт был у источника, какой применили, сколько дочерних визуалов убрали,
+        // и итоговый текст/шрифт/геометрия подписи. Чтобы регрессия вида «два глифа»,
+        // «чужая иконка» или «блоб вместо ∞» ловилась из лога.
+        private static void LogButtonCreated(Sprite srcSprite, Image cloneImg, TextMeshProUGUI label, int removed)
         {
             try
             {
                 var lrt = label != null ? label.rectTransform : null;
+                var fontName = label != null && label.font != null ? label.font.name : "(none)";
                 Plugin.Log?.LogInfo("endless: button created srcSprite=" + SpriteName(srcSprite)
                     + " usedSprite=" + SpriteName(cloneImg != null ? cloneImg.sprite : null)
-                    + " label(anchorMin=" + (lrt != null ? lrt.anchorMin.ToString() : "-")
+                    + " removedChildren=" + removed
+                    + " label(text='" + (label != null ? label.text : "") + "'"
+                    + " font=" + fontName
+                    + " size=" + (label != null ? label.fontSize : 0f)
+                    + " anchorMin=" + (lrt != null ? lrt.anchorMin.ToString() : "-")
                     + " anchorMax=" + (lrt != null ? lrt.anchorMax.ToString() : "-")
                     + " sizeDelta=" + (lrt != null ? lrt.sizeDelta.ToString() : "-")
                     + " anchoredPos=" + (lrt != null ? lrt.anchoredPosition.ToString() : "-")
-                    + " fontSize=" + (label != null ? label.fontSize : 0f)
                     + " color=" + (label != null ? label.color.ToString() : "-") + ")");
             }
             catch { }
