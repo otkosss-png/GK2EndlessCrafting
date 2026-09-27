@@ -74,6 +74,8 @@ namespace GK2EndlessCrafting
 
                 var prt = plus.transform as RectTransform;
                 var rt = btn.transform as RectTransform;
+                var srcImg = plus.targetGraphic as Image;
+                var srcSprite = srcImg != null ? srcImg.sprite : null;
                 if (prt != null && rt != null)
                 {
                     rt.anchorMin = prt.anchorMin;
@@ -83,16 +85,34 @@ namespace GK2EndlessCrafting
                     rt.anchoredPosition = prt.anchoredPosition + new Vector2(prt.sizeDelta.x + 6f, 0f);
                 }
 
+                // Клон сохраняет СВОЙ спрайт — это гарантированно вид соседней игровой
+                // кнопки «+» (правильный размер/скругления/цвета). Глобальный GameStyle
+                // применяем ТОЛЬКО если у источника спрайта нет (иначе нестабильный
+                // хевристический поиск подменял кнопку чужой иконкой).
+                var cloneImg = btn.targetGraphic as Image;
+                if (cloneImg != null && cloneImg.sprite == null)
+                {
+                    var fallback = GameStyle.ButtonSprite;
+                    if (fallback != null)
+                    {
+                        cloneImg.sprite = fallback;
+                        cloneImg.type = fallback.border != Vector4.zero ? Image.Type.Sliced : Image.Type.Simple;
+                    }
+                }
+
                 // Отключаем цветовые переходы: иначе DoStateTransition сбрасывает подсветку.
                 var selectable = btn as Selectable;
                 if (selectable != null) selectable.transition = Selectable.Transition.None;
 
-                var label = BuildLabel(btn);
+                var label = BuildLabel(btn, prt);
                 btn.onClick.AddListener(() => Toggle(window));
 
                 _buttons[key] = btn;
                 _labels[key] = label;
                 Sync(window);
+
+                // Одноразовая диагностика внешнего вида кнопки (на каждую созданную кнопку).
+                LogButtonCreated(srcSprite, cloneImg, label);
             }
             catch (Exception ex)
             {
@@ -109,10 +129,12 @@ namespace GK2EndlessCrafting
                 if (!_buttons.TryGetValue(key, out var btn) || btn == null) return;
 
                 bool on = Plugin.Registry != null && Plugin.Registry.IsOn(StationKey.Of(window));
+                // Тинтуем ТОЛЬКО фон кнопки; подпись «∞» всегда белая — читается и на
+                // акцентном фоне (вкл), и на родном спрайте кнопки (выкл).
                 var img = btn.targetGraphic as Image;
                 if (img != null) img.color = on ? GameStyle.Accent : Color.white;
                 if (_labels.TryGetValue(key, out var label) && label != null)
-                    label.color = on ? Color.white : GameStyle.Text;
+                    label.color = Color.white;
             }
             catch (Exception ex)
             {
@@ -189,28 +211,60 @@ namespace GK2EndlessCrafting
                 Plugin.Log?.LogInfo("endless: " + msg);
         }
 
-        private static TextMeshProUGUI BuildLabel(LazyButton btn)
+        private static TextMeshProUGUI BuildLabel(LazyButton btn, RectTransform srcRect)
         {
             var label = btn.GetComponentInChildren<TextMeshProUGUI>(true);
-            if (label != null)
+            if (label == null)
             {
-                label.text = EndlessText.Infinity(Plugin.Lang);
+                // У «+»/«−» нет текстового узла — рисуем «∞» поверх родного спрайта
+                // кнопки (спрайт НЕ подменяем). Размер шрифта — по высоте кнопки.
+                float h = srcRect != null ? Mathf.Abs(srcRect.rect.height) : 0f;
+                int size = h > 1f ? Mathf.Clamp(Mathf.RoundToInt(h * 0.8f), 14, 40) : 24;
+                label = UiFactory.Label("Label", btn.transform, EndlessText.Infinity(Plugin.Lang), size,
+                    TextAlignmentOptions.Center, Color.white);
             }
             else
             {
-                // У «+»/«−» может не быть текстового узла (иконка) — заменяем графику
-                // на игровой спрайт кнопки и рисуем «∞» поверх.
-                UiFactory.ApplyButtonSprite(btn);
-                label = UiFactory.Label("Label", btn.transform, EndlessText.Infinity(Plugin.Lang), 30,
-                    TextAlignmentOptions.Center, Color.white);
-                var rt = label.rectTransform;
-                rt.anchorMin = Vector2.zero;
-                rt.anchorMax = Vector2.one;
-                rt.offsetMin = Vector2.zero;
-                rt.offsetMax = Vector2.zero;
+                label.text = EndlessText.Infinity(Plugin.Lang);
             }
+
+            // Подпись на весь rect кнопки, по центру, без смещений и клиппинга —
+            // так же, как родной глиф «+»/«−».
+            var rt = label.rectTransform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.offsetMin = new Vector2(1f, 1f);
+            rt.offsetMax = new Vector2(-1f, -1f);
+            rt.anchoredPosition = Vector2.zero;
+            rt.localScale = Vector3.one;
+            label.alignment = TextAlignmentOptions.Center;
+            label.overflowMode = TextOverflowModes.Overflow;
             label.raycastTarget = false;
             return label;
         }
+
+        // Одноразовый диагностический лог (Info) на каждую созданную кнопку: какой
+        // спрайт был у источника, какой применили, и геометрия/шрифт подписи. Чтобы
+        // регрессия вида «кнопка = чужая иконка» ловилась из лога.
+        private static void LogButtonCreated(Sprite srcSprite, Image cloneImg, TextMeshProUGUI label)
+        {
+            try
+            {
+                var lrt = label != null ? label.rectTransform : null;
+                Plugin.Log?.LogInfo("endless: button created srcSprite=" + SpriteName(srcSprite)
+                    + " usedSprite=" + SpriteName(cloneImg != null ? cloneImg.sprite : null)
+                    + " label(anchorMin=" + (lrt != null ? lrt.anchorMin.ToString() : "-")
+                    + " anchorMax=" + (lrt != null ? lrt.anchorMax.ToString() : "-")
+                    + " sizeDelta=" + (lrt != null ? lrt.sizeDelta.ToString() : "-")
+                    + " anchoredPos=" + (lrt != null ? lrt.anchoredPosition.ToString() : "-")
+                    + " fontSize=" + (label != null ? label.fontSize : 0f)
+                    + " color=" + (label != null ? label.color.ToString() : "-") + ")");
+            }
+            catch { }
+        }
+
+        private static string SpriteName(Sprite s)
+            => s == null || string.IsNullOrEmpty(s.name) ? "(none)" : s.name;
     }
 }
