@@ -518,8 +518,24 @@ namespace GK2EndlessCrafting
 
             if (g.IsSprite)
             {
-                var icon = EnsureIcon(btn, key, g.Sprite);
-                if (icon != null && _labels.TryGetValue(key, out var l) && l != null && l.gameObject.activeSelf)
+                // Перекрываем РОДНОЙ глиф кнопки (в т.ч. лениво созданный «+» в Content/Icon)
+                // спрайтом ∞ — тогда кнопка выглядит как соседние «+/−» и второго глифа нет.
+                int retargeted = RetargetChildGlyphs(btn, g.Sprite);
+
+                if (retargeted > 0)
+                {
+                    if (_icons.TryGetValue(key, out var own) && own != null)
+                    {
+                        UnityEngine.Object.Destroy(own.gameObject);
+                        _icons.Remove(key);
+                    }
+                }
+                else
+                {
+                    EnsureIcon(btn, key, g.Sprite);
+                }
+
+                if (_labels.TryGetValue(key, out var l) && l != null && l.gameObject.activeSelf)
                     l.gameObject.SetActive(false);
                 return;
             }
@@ -560,6 +576,51 @@ namespace GK2EndlessCrafting
             SizeIcon(icon, btn);
             _icons[key] = icon;
             return icon;
+        }
+
+        // Ставит спрайт ∞ на РОДНЫЕ слоты глифа кнопки (Content/Icon и любые дочерние Image,
+        // кроме фона). Возвращает число перекрытых слотов. Игра создаёт «+» лениво, поэтому
+        // вызывается на каждом sync — как только «+» появился, он тут же станет «∞».
+        private static int RetargetChildGlyphs(LazyButton btn, Sprite sprite)
+        {
+            if (btn == null || sprite == null) return 0;
+            var bg = btn.targetGraphic != null ? btn.targetGraphic.transform : null;
+            var imgs = btn.GetComponentsInChildren<Image>(true);
+            var slots = new List<Image>(2);
+            // Приоритет 1: слоты с именем «...icon...» (родной глиф кнопок игры).
+            for (int i = 0; i < imgs.Length; i++)
+            {
+                var im = imgs[i];
+                if (im == null || im.transform == bg) continue;
+                if (im.gameObject.name.IndexOf("icon", StringComparison.OrdinalIgnoreCase) >= 0)
+                    slots.Add(im);
+            }
+            // Приоритет 2: любой не-frame Image (кроме фона).
+            if (slots.Count == 0)
+            {
+                for (int i = 0; i < imgs.Length; i++)
+                {
+                    var im = imgs[i];
+                    if (im == null || im.transform == bg) continue;
+                    var name = im.sprite != null ? im.sprite.name : null;
+                    if (IsFrameSprite(name)) continue;
+                    slots.Add(im);
+                    break; // второй глиф не нужен
+                }
+            }
+
+            int n = 0;
+            for (int i = 0; i < slots.Count; i++)
+            {
+                var im = slots[i];
+                if (im.sprite != sprite) im.sprite = sprite;
+                im.preserveAspect = true;
+                im.color = Color.white;
+                im.raycastTarget = false;
+                if (!im.gameObject.activeSelf) im.gameObject.SetActive(true);
+                n++;
+            }
+            return n;
         }
 
         // Квадрат по высоте кнопки (~70%), сохраняя пропорции спрайта (preserveAspect).
@@ -643,6 +704,8 @@ namespace GK2EndlessCrafting
                 if (keepLabel != null && (c == keepLabel || keepLabel.IsChildOf(c))) continue;
                 if (keepIcon != null && (c == keepIcon || keepIcon.IsChildOf(c))) continue;
                 if (keepBg != null && (c == keepBg || keepBg.IsChildOf(c))) continue;
+                // Слоты глифа (Image) не удаляем — их перекрывает спрайт ∞ (RetargetChildGlyphs).
+                if (c.GetComponentInChildren<Image>(true) != null) continue;
                 victims.Add(c);
             }
             foreach (var v in victims) UnityEngine.Object.Destroy(v.gameObject);

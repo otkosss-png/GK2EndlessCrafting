@@ -136,9 +136,11 @@ namespace GK2EndlessCrafting
                 var queue = craft.CraftElementsQueue;
                 if (queue == null) return;
 
+                var recipeId = Plugin.Registry.RecipeFor(stationId);
+
                 if (queue.Count == 0)
                 {
-                    var recipe = Plugin.Registry.RecipeFor(stationId);
+                    var recipe = recipeId;
                     var def = FindRecipe(craft, recipe);
                     if (def == null) { Trace("station " + stationId + ": recipe " + recipe + " not found"); return; }
 
@@ -155,15 +157,33 @@ namespace GK2EndlessCrafting
                     Trace("station " + stationId + ": enqueued " + recipe);
                 }
 
+                // Бесконечными помечаем ТОЛЬКО элементы выбранного рецепта — иначе
+                // «∞» вешался на все записи очереди станции (жалоба игрока).
                 // Снапшот: set_IsInfinite дёргает OnCountChanged, подписчик может изменить очередь.
                 foreach (var el in new List<CraftElementBase>(queue))
-                    if (el != null && !el.IsInfinite) el.IsInfinite = true;
+                    if (el != null && !el.IsInfinite && MatchesRecipe(el, recipeId)) el.IsInfinite = true;
             }
             catch (Exception ex)
             {
                 WarnThrottled(stationId + "|" + ex.GetType().Name + "|" + ex.Message,
                     "tick " + stationId + ": " + Describe(ex));
             }
+        }
+
+        // Элемент очереди принадлежит выбранному рецепту? Сравниваем по Def.id (и по
+        // CraftId на случай, если def ещё не привязан). Пустой recipeId — старое
+        // поведение (пометить всё), чтобы режим не «замолчал» на старых записях.
+        private static bool MatchesRecipe(CraftElementBase el, string recipeId)
+        {
+            if (string.IsNullOrEmpty(recipeId)) return true;
+            try
+            {
+                var def = el.Def;
+                if (def != null && !string.IsNullOrEmpty(def.id)) return def.id == recipeId;
+            }
+            catch { }
+            try { return el.CraftId == recipeId; }
+            catch { return false; }
         }
 
         private static CraftDefBase FindRecipe(CraftComponent craft, string recipeId)
