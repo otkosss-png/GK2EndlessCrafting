@@ -45,7 +45,7 @@ namespace GK2EndlessCrafting
         {
             if (Mod.DebugLog != null) return;
             Mod.Enabled = Config.Bind("General", "Enabled", Mod.DefaultEnabled, "Show the endless crafting button");
-            Mod.PollSeconds = Config.Bind("General", "PollSeconds", Mod.DefaultPollSeconds, "Station poll interval (s)");
+            Mod.PollMs = Config.Bind("General", "PollMs", Mod.DefaultPollMs, "Fallback station poll interval (ms)");
             Mod.Language = Config.Bind("General", "Language", Mod.DefaultLanguage, "auto | en | ru");
             Mod.DebugLog = Config.Bind("General", "DebugLog", Mod.DefaultDebugLog, "Verbose debug log");
         }

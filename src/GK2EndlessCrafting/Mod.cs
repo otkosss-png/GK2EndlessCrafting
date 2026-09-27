@@ -8,7 +8,7 @@ namespace GK2EndlessCrafting
     {
         internal const string DefaultLanguage = "en";
         internal const bool DefaultEnabled = true;
-        internal const int DefaultPollSeconds = 1;
+        internal const int DefaultPollMs = 250;
         internal const bool DefaultDebugLog = false;
 
         private readonly Gk2ModMetadata _metadata = new Gk2ModMetadata(
@@ -21,7 +21,7 @@ namespace GK2EndlessCrafting
             false);
 
         internal ConfigEntry<bool> Enabled;
-        internal ConfigEntry<int> PollSeconds;
+        internal ConfigEntry<int> PollMs;
         internal ConfigEntry<string> Language;
         internal ConfigEntry<bool> DebugLog;
 
@@ -32,8 +32,8 @@ namespace GK2EndlessCrafting
             var s = context.Settings;
             Enabled = s.AddToggle("General", "Enabled", DefaultEnabled,
                 "Кнопка «∞»", "Показывать кнопку бесконечного крафта в окне станции", 10);
-            PollSeconds = s.AddIntSlider("General", "PollSeconds", DefaultPollSeconds, 1, 10,
-                "Проверка станций, с", "Как часто проверять очередь", 1, 20);
+            PollMs = s.AddIntSlider("General", "PollMs", DefaultPollMs, 100, 5000,
+                "Проверка станций, мс", "Резервный опрос очереди (мс); 250 по умолчанию", 50, 20);
             Language = s.AddDropdown("General", "Language", DefaultLanguage, new[] { "auto", "en", "ru" },
                 "Language / Язык", "en, ru, auto (system)", 10);
             DebugLog = s.AddToggle("General", "DebugLog", DefaultDebugLog,
