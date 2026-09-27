@@ -30,6 +30,19 @@ namespace GK2EndlessCrafting
         private static readonly FieldInfo _plusField =
             AccessTools.Field(typeof(UIBaseCraftSelectionWindow), "plusCraftButton");
 
+        // Игровая кнопка «∞» на строке очереди (скрыта игрой) — источник родного спрайта ∞.
+        private static readonly FieldInfo _infButtonField =
+            AccessTools.Field(typeof(UICraftQueueElementWidget), "infCraftButton");
+        private static readonly FieldInfo _iconTransitionsField =
+            AccessTools.Field(typeof(LazyButton), "iconTransitions");
+
+        // Кэш родного спрайта ∞ (ищем не чаще раза в секунду, пока не найдём).
+        private static Sprite _infSprite;
+        private static float _infSpriteNextSearch;
+        private static string _infSpriteSource = "(none)";
+        // Иконка-картинка «∞» на нашей кнопке (когда родной спрайт найден).
+        private static readonly Dictionary<int, Image> _icons = new Dictionary<int, Image>();
+
         // LazyUIEvent-поля копируются Instantiate вместе с компонентом; их тоже надо
         // обнулить, иначе клик по «∞» дёрнет «+». onClick (Button) чистим отдельно.
         private static readonly FieldInfo[] _lazyEventFields =
@@ -131,7 +144,7 @@ namespace GK2EndlessCrafting
                 Sync(window);
 
                 // Одноразовая диагностика внешнего вида кнопки (на каждую созданную кнопку).
-                LogButtonCreated(srcSprite, cloneImg, label, removed, rt);
+                LogButtonCreated(srcSprite, cloneImg, label, removed, rt, key);
             }
             catch (Exception ex)
             {
@@ -161,6 +174,10 @@ namespace GK2EndlessCrafting
                     if (hidden > 0)
                         Plugin.Log?.LogInfo("endless: button " + key + " late cleanup hidden=" + hidden);
                 }
+
+                // 1b) Глиф: как только появилась игровая строка очереди — берём её родной
+                //     спрайт ∞ и заменяем TMP-подпись картинкой (дёшево: спрайт кэшируется).
+                ApplyGlyph(btn, key);
 
                 // 2) Цвет. Тинтуем ТОЛЬКО фон; подпись — родной цвет глифа (выкл) или
                 //    белый на акцентном фоне (вкл), чтобы оставалась читаемой.
@@ -203,6 +220,7 @@ namespace GK2EndlessCrafting
             _buttons.Clear();
             _labels.Clear();
             _labelColors.Clear();
+            _icons.Clear();
             _windows.Clear();
             _lastSig.Clear();
         }
@@ -299,6 +317,117 @@ namespace GK2EndlessCrafting
             catch { return false; }
         }
 
+        // Родной спрайт «∞» от игровой infCraftButton строки очереди. Ищем не чаще раза
+        // в секунду, пока не найдём (строка очереди появляется позже); результат кэшируем.
+        private static Sprite TryGetInfinitySprite()
+        {
+            if (_infSprite != null) return _infSprite;
+            if (Time.unscaledTime < _infSpriteNextSearch) return null;
+            _infSpriteNextSearch = Time.unscaledTime + 1f;
+            try
+            {
+                foreach (var w in Resources.FindObjectsOfTypeAll<UICraftQueueElementWidget>())
+                {
+                    if (w == null) continue;
+                    var lb = _infButtonField != null ? _infButtonField.GetValue(w) as LazyButton : null;
+                    if (lb == null) continue;
+                    var sp = ExtractSprite(lb, out var cand);
+                    if (sp != null)
+                    {
+                        _infSprite = sp;
+                        _infSpriteSource = cand;
+                        Plugin.Log?.LogInfo("endless: native infinity sprite = " + SpriteName(sp) + " (via " + cand + ")");
+                        return sp;
+                    }
+                }
+            }
+            catch (Exception ex) { Trace("inf sprite search: " + ex.Message); }
+            return null;
+        }
+
+        // Кандидаты спрайта у игровой infCraftButton: targetGraphic → дочерние Image →
+        // iconTransitions[].{defaultSprite,…}. Возвращает первый непустой.
+        private static Sprite ExtractSprite(LazyButton lb, out string source)
+        {
+            var img = lb.targetGraphic as Image;
+            if (img != null && img.sprite != null) { source = "targetGraphic"; return img.sprite; }
+
+            var imgs = lb.GetComponentsInChildren<Image>(true);
+            for (int i = 0; i < imgs.Length; i++)
+                if (imgs[i] != null && imgs[i].sprite != null)
+                { source = "childImage:" + imgs[i].gameObject.name; return imgs[i].sprite; }
+
+            if (_iconTransitionsField != null)
+            {
+                var list = _iconTransitionsField.GetValue(lb) as System.Collections.IEnumerable;
+                if (list != null)
+                {
+                    int i = 0;
+                    foreach (var it in list)
+                    {
+                        if (it == null) continue;
+                        var type = it.GetType();
+                        foreach (var fn in new[] { "defaultSprite", "highlightedSprite", "pressedSprite", "selectedSprite" })
+                        {
+                            var f = type.GetField(fn);
+                            var spv = f != null ? f.GetValue(it) as Sprite : null;
+                            if (spv != null) { source = "iconTransitions#" + i + "." + fn; return spv; }
+                        }
+                        i++;
+                    }
+                }
+            }
+            source = "(none)";
+            return null;
+        }
+
+        // Если родной спрайт ∞ доступен — показываем картинкой и прячем TMP-подпись.
+        private static void ApplyGlyph(LazyButton btn, int key)
+        {
+            var sprite = TryGetInfinitySprite();
+            if (sprite == null) return;
+            var icon = EnsureIcon(btn, key, sprite);
+            if (icon == null) return;
+            if (_labels.TryGetValue(key, out var label) && label != null && label.gameObject.activeSelf)
+                label.gameObject.SetActive(false);
+        }
+
+        private static Image EnsureIcon(LazyButton btn, int key, Sprite sprite)
+        {
+            if (_icons.TryGetValue(key, out var cached) && cached != null && cached.transform.parent == btn.transform)
+            {
+                if (cached.sprite != sprite) cached.sprite = sprite;
+                if (!cached.gameObject.activeSelf) cached.gameObject.SetActive(true);
+                SizeIcon(cached, btn);
+                return cached;
+            }
+
+            var rt = UiFactory.Rect("EndlessIcon", btn.transform);
+            var icon = rt.gameObject.AddComponent<Image>();
+            icon.sprite = sprite;
+            icon.color = Color.white;      // фон тинтуется отдельно; иконка всегда светлая
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            SizeIcon(icon, btn);
+            _icons[key] = icon;
+            return icon;
+        }
+
+        // Квадрат по высоте кнопки (~70%), сохраняя пропорции спрайта (preserveAspect).
+        private static void SizeIcon(Image icon, LazyButton btn)
+        {
+            if (icon == null) return;
+            var rt = icon.rectTransform;
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = Vector2.zero;
+            var brt = btn != null ? btn.transform as RectTransform : null;
+            float h = brt != null ? Mathf.Abs(brt.rect.height) : 0f;
+            float s = Mathf.Clamp(h * 0.7f, 12f, 96f);
+            rt.sizeDelta = new Vector2(s, s);
+        }
+
         private static TextMeshProUGUI BuildLabel(LazyButton btn, RectTransform srcRect,
             TMP_FontAsset srcFont, Material srcMat, float srcSize, Color srcColor)
         {
@@ -356,12 +485,14 @@ namespace GK2EndlessCrafting
             if (parent == null) return 0;
             var keepBg = btn.targetGraphic != null ? btn.targetGraphic.transform : null;
             var keepLabel = _labels.TryGetValue(key, out var l) && l != null ? l.transform : null;
+            var keepIcon = _icons.TryGetValue(key, out var ic) && ic != null ? ic.transform : null;
             var victims = new List<Transform>(parent.childCount);
             for (int i = 0; i < parent.childCount; i++)
             {
                 var c = parent.GetChild(i);
                 if (c == null) continue;
                 if (keepLabel != null && (c == keepLabel || keepLabel.IsChildOf(c))) continue;
+                if (keepIcon != null && (c == keepIcon || keepIcon.IsChildOf(c))) continue;
                 if (keepBg != null && (c == keepBg || keepBg.IsChildOf(c))) continue;
                 victims.Add(c);
             }
@@ -387,7 +518,7 @@ namespace GK2EndlessCrafting
         // и итоговый текст/шрифт/геометрия подписи. Чтобы регрессия вида «два глифа»,
         // «чужая иконка» или «блоб вместо ∞» ловилась из лога.
         private static void LogButtonCreated(Sprite srcSprite, Image cloneImg, TextMeshProUGUI label,
-            int removed, RectTransform btnRect)
+            int removed, RectTransform btnRect, int key)
         {
             try
             {
@@ -396,12 +527,22 @@ namespace GK2EndlessCrafting
                 var rectSize = btnRect != null
                     ? (Mathf.RoundToInt(btnRect.rect.width) + "x" + Mathf.RoundToInt(btnRect.rect.height))
                     : "-";
+
+                string iconSize = "(none)";
+                if (_icons.TryGetValue(key, out var icon) && icon != null)
+                {
+                    var irt = icon.rectTransform;
+                    iconSize = Mathf.RoundToInt(irt.rect.width) + "x" + Mathf.RoundToInt(irt.rect.height);
+                }
+
                 Plugin.Log?.LogInfo("endless: button created srcSprite=" + SpriteName(srcSprite)
                     + " usedSprite=" + SpriteName(cloneImg != null ? cloneImg.sprite : null)
                     + " removedChildren=" + removed
                     + " buttonRect=" + rectSize
-                    + " label(text='" + (label != null ? label.text : "") + "'"
+                    + " infSprite=" + SpriteName(_infSprite) + (string.IsNullOrEmpty(_infSpriteSource) ? "" : "(" + _infSpriteSource + ")")
+                    + " iconSize=" + iconSize
                     + " font=" + fontName
+                    + " label(text='" + (label != null ? label.text : "") + "'"
                     + " size=" + (label != null ? label.fontSize : 0f)
                     + " anchorMin=" + (lrt != null ? lrt.anchorMin.ToString() : "-")
                     + " anchorMax=" + (lrt != null ? lrt.anchorMax.ToString() : "-")
