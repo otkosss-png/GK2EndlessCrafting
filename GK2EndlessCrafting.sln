@@ -11,6 +11,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{DDE48C2F
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GK2EndlessCrafting.Core.Tests", "tests\GK2EndlessCrafting.Core.Tests\GK2EndlessCrafting.Core.Tests.csproj", "{B2652FFB-83D8-4CAD-9717-BAA94E2CF04E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GK2EndlessCrafting", "src\GK2EndlessCrafting\GK2EndlessCrafting.csproj", "{F7DB2FD5-6DC1-4DBB-AE48-8EA519B4AD4A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -28,9 +30,14 @@ Global
 		{B2652FFB-83D8-4CAD-9717-BAA94E2CF04E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B2652FFB-83D8-4CAD-9717-BAA94E2CF04E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B2652FFB-83D8-4CAD-9717-BAA94E2CF04E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F7DB2FD5-6DC1-4DBB-AE48-8EA519B4AD4A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F7DB2FD5-6DC1-4DBB-AE48-8EA519B4AD4A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F7DB2FD5-6DC1-4DBB-AE48-8EA519B4AD4A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F7DB2FD5-6DC1-4DBB-AE48-8EA519B4AD4A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{264A1E93-1099-4E32-A958-744F8C2D52E0} = {9A25E8CB-4185-4DE4-B6E0-A828DDE8F52A}
 		{B2652FFB-83D8-4CAD-9717-BAA94E2CF04E} = {DDE48C2F-D714-4389-AD37-BDE320E29C9F}
+		{F7DB2FD5-6DC1-4DBB-AE48-8EA519B4AD4A} = {9A25E8CB-4185-4DE4-B6E0-A828DDE8F52A}
 	EndGlobalSection
 EndGlobal
