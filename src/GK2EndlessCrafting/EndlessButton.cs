@@ -138,14 +138,19 @@ namespace GK2EndlessCrafting
 
                 if (Plugin.Registry.IsOn(id))
                 {
+                    // Выключено: снять реестровую запись и нативный флаг «∞» с очереди.
                     Plugin.Registry.Clear(id);
+                    EndlessRunner.ClearNative(id);
                 }
                 else
                 {
+                    // Включено: запись в реестр (для персистентности) + нативный флаг
+                    // CraftElementBase.IsInfinite на очереди станции (игра сама повторяет).
                     Plugin.Registry.Set(id, recipe);
-                    // Снимаем params ровно в тот момент, когда их посчитала игра:
-                    // раннер поставит крафт с тем же paramsData, что и клик по «+».
+                    // Снимаем params ровно в тот момент, когда их посчитала игра —
+                    // постановка крафта использует тот же paramsData, что и клик по «+».
                     StationKey.CaptureParams(id, StationKey.DataOf(window)?.ParamsData);
+                    EndlessRunner.ApplyNow(id);
                 }
                 // Переживание перезапуска: пишем состояние реестра в файл слота.
                 Plugin.SaveRegistry();

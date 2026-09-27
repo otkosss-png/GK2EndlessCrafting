@@ -4,40 +4,27 @@ using UnityEngine;
 
 namespace GK2EndlessCrafting
 {
-    // Держит очередь станций в режиме «∞» заполненной: подписывается на игровые
-    // OnCraftFinish/OnCraftRemovedFromQueue (чтобы долить крафт в тот же момент,
-    // как очередь опустела) и дополнительно опрашивает станции по таймеру.
+    // Управляет флагом «∞» НА САМОЙ ОЧЕРЕДИ станции — игра уже умеет бесконечный
+    // крафт нативно (CraftElementBase.IsInfinite; CraftComponent.Start/Finish пропускают
+    // UpdateCountOnFinish для бесконечного элемента). Раннер лишь «дотягивает» этот
+    // флаг для станций из реестра: если в очереди есть элементы — пометить их
+    // бесконечными; если очередь пуста — поставить один крафт и пометить его.
+    // Собственного повтора по таймеру/событиям больше нет.
     internal sealed class EndlessRunner : MonoBehaviour
     {
-        // Сколько крафтов держим в очереди станции. 1 = «доливаем, как только
-        // очередь опустела». Жёсткий потолок — 2 (MAX_QUEUE_CRAFTS 999 не трогаем).
-        // Если в игре всё ещё виден зазор между крафтами — поднять до 2.
-        private const int QueueBuffer = 1;
-
         private static EndlessRunner _instance;
         private static bool _running = true;
         private float _timer;
 
-        // Проверка смены слота сейва (загрузка другого сохранения) — не чаще раза в секунду.
+        // Проверка смены слота сейва (загрузили другое сохранение) — не чаще раза в секунду.
         private const float SlotCheckSeconds = 1f;
         private float _slotTimer;
 
-        // Станции, по событиям которых надо немедленно долить крафт (следующий кадр).
-        private static readonly HashSet<string> _dirty = new HashSet<string>();
-        // Активные подписки на CraftComponent по stationId.
-        private static readonly Dictionary<string, Subscription> _subs = new Dictionary<string, Subscription>();
         // Станции, по которым уже предупредили об отсутствии CraftComponent.
         private static readonly HashSet<string> _resolveWarned = new HashSet<string>();
         // Последнее время warning'а по ключу — троттлинг повторяющихся исключений.
         private static readonly Dictionary<string, float> _errorWarnedAt = new Dictionary<string, float>();
         private const float ErrorWarnCooldown = 60f;
-
-        private sealed class Subscription
-        {
-            internal CraftComponent Component;
-            internal Action OnFinish;
-            internal CraftComponent.DelCraftRemovedFromQueue OnRemoved;
-        }
 
         internal static void Start()
         {
@@ -60,11 +47,6 @@ namespace GK2EndlessCrafting
             if (_instance == null) _instance = this;
         }
 
-        private void OnDestroy()
-        {
-            UnsubscribeAll();
-        }
-
         private void Update()
         {
             if (_instance == null) _instance = this;
@@ -80,14 +62,7 @@ namespace GK2EndlessCrafting
                 CheckSlot();
             }
 
-            if (Plugin.Registry == null || Plugin.Registry.Count == 0)
-            {
-                if (_subs.Count > 0) UnsubscribeAll();
-                return;
-            }
-
-            // Событийные доливы — каждый кадр (мгновенно после OnCraftFinish/OnCraftRemovedFromQueue).
-            if (_dirty.Count > 0) ProcessDirty();
+            if (Plugin.Registry == null || Plugin.Registry.Count == 0) return;
 
             float step = Plugin.Mod.PollMs != null
                 ? Mathf.Clamp(Plugin.Mod.PollMs.Value, 50, 5000) / 1000f
@@ -96,21 +71,15 @@ namespace GK2EndlessCrafting
             if (_timer < step) return;
             _timer = 0f;
 
-            // Резервная сетка: синхронизировать подписки и долить все станции.
-            SyncSubscriptions();
-            TopUpAll();
+            // Ensure-проход: для каждой станции реестра включить нативную «∞»
+            // (очередь не пуста → пометить элементы; пуста → поставить один крафт).
+            foreach (var e in Plugin.Registry.All()) EnsureNative(e.Key);
         }
 
-        private static void ProcessDirty()
-        {
-            var ids = new List<string>(_dirty);
-            _dirty.Clear();
-            foreach (var id in ids) TopUp(id);
-        }
-
-        // Смена слота сейва (загрузили другое сохранение) → перечитать файл и сбросить
-        // подписки/очереди прошлого слота. Plugin.SlotName — источник правды: его же
-        // выставляет Plugin.LoadForCurrentSlot/SaveRegistry.
+        // Смена слота сейва (загрузили другое сохранение) → перечитать файл; нативный
+        // флаг для загруженных станций дотягивается обычным Ensure-проходом выше.
+        // Plugin.SlotName — источник правды: его же выставляют Plugin.LoadForCurrentSlot/
+        // SaveRegistry.
         private static void CheckSlot()
         {
             if (Plugin.Registry == null) return;
@@ -120,113 +89,72 @@ namespace GK2EndlessCrafting
 
             Plugin.SlotName = slot;
             SaveSlotStore.Load(Plugin.Registry, slot);
-            UnsubscribeAll();
-            _dirty.Clear();
         }
 
-        private static void SyncSubscriptions()
-        {
-            // Станции, которых больше нет в реестре (∞ выключен) — отписаться.
-            foreach (var id in new List<string>(_subs.Keys))
-                if (Plugin.Registry.RecipeFor(id) == null) Unsubscribe(id);
+        // Немедленно применить нативный флаг (вызывается из кнопки при включении «∞»).
+        internal static void ApplyNow(string stationId) => EnsureNative(stationId);
 
-            foreach (var e in Plugin.Registry.All())
-            {
-                var wgo = StationKey.ResolveWgo(e.Key);
-                var comp = wgo != null ? wgo.CraftComponent : null;
-                if (comp == null) { Unsubscribe(e.Key); continue; } // резолв не удался — не держим подписку
-                if (_subs.TryGetValue(e.Key, out var s) && s.Component == comp) continue; // уже подписаны
-                Unsubscribe(e.Key);
-                Subscribe(e.Key, comp);
-            }
-        }
-
-        private static void Subscribe(string id, CraftComponent comp)
+        // Снять нативный флаг (вызывается из кнопки при выключении «∞»).
+        internal static void ClearNative(string stationId)
         {
             try
             {
-                var onFinish = new Action(() => MarkDirty(id));
-                CraftComponent.DelCraftRemovedFromQueue onRemoved = element => MarkDirty(id);
-                comp.OnCraftFinish += onFinish;
-                comp.OnCraftRemovedFromQueue += onRemoved;
-                _subs[id] = new Subscription { Component = comp, OnFinish = onFinish, OnRemoved = onRemoved };
-                Trace("station " + id + ": subscribed");
+                var craft = StationKey.Resolve(stationId);
+                if (craft == null) return;
+                var queue = craft.CraftElementsQueue;
+                if (queue == null) return;
+                foreach (var el in queue)
+                    if (el != null) el.IsInfinite = false;
+                Trace("station " + stationId + ": infinite off");
             }
             catch (Exception ex)
             {
-                WarnThrottled("sub|" + id, "subscribe " + id + ": " + Describe(ex));
+                WarnThrottled(stationId + "|clear|" + ex.GetType().Name, "clear " + stationId + ": " + Describe(ex));
             }
         }
 
-        private static void Unsubscribe(string id)
+        // «Ensure»-проход: очередь станции должна быть бесконечной.
+        private static void EnsureNative(string stationId)
         {
-            if (!_subs.TryGetValue(id, out var s)) return;
-            _subs.Remove(id);
-            _dirty.Remove(id);
-            if (s.Component == null) return;
+            if (Plugin.Registry == null || !Plugin.Registry.IsOn(stationId)) return;
             try
             {
-                if (s.OnFinish != null) s.Component.OnCraftFinish -= s.OnFinish;
-                if (s.OnRemoved != null) s.Component.OnCraftRemovedFromQueue -= s.OnRemoved;
-                Trace("station " + id + ": unsubscribed");
-            }
-            catch (Exception ex)
-            {
-                Trace("unsubscribe " + id + ": " + ex.Message);
-            }
-        }
-
-        private static void UnsubscribeAll()
-        {
-            foreach (var id in new List<string>(_subs.Keys)) Unsubscribe(id);
-        }
-
-        private static void MarkDirty(string id)
-        {
-            if (!string.IsNullOrEmpty(id)) _dirty.Add(id);
-        }
-
-        private static void TopUpAll()
-        {
-            foreach (var e in Plugin.Registry.All()) TopUp(e.Key);
-        }
-
-        // Доливает ОДИН крафт, если очередь короче буфера. Режим не выключается при ошибках.
-        private static void TopUp(string id)
-        {
-            if (Plugin.Registry == null || !Plugin.Registry.IsOn(id)) return;
-            try
-            {
-                var wgo = StationKey.ResolveWgo(id);
-                if (wgo == null) { WarnResolveOnce(id); return; }
+                var wgo = StationKey.ResolveWgo(stationId);
+                if (wgo == null) { WarnResolveOnce(stationId); return; }
 
                 var craft = wgo.CraftComponent;
-                if (craft == null) { WarnResolveOnce(id); return; }
-                _resolveWarned.Remove(id); // станция снова доступна
+                if (craft == null) { WarnResolveOnce(stationId); return; }
+                _resolveWarned.Remove(stationId); // станция снова доступна
 
                 var queue = craft.CraftElementsQueue;
-                int count = queue != null ? queue.Count : 0;
-                if (count >= QueueBuffer) return;
+                if (queue == null) return;
 
-                var recipe = Plugin.Registry.RecipeFor(id);
-                var def = FindRecipe(craft, recipe);
-                if (def == null) { Trace("station " + id + ": recipe " + recipe + " not found"); return; }
-
-                // AddToQueue -> GetStartCraftStatus -> CheckWorkerDependentValues дерефает
-                // paramsData.customRes, поэтому paramsData обязателен (см. fix round 2).
-                var paramsData = StationKey.ParamsFor(id) ?? StationKey.BuildParams(wgo, def);
-                if (paramsData == null)
+                if (queue.Count == 0)
                 {
-                    WarnThrottled(id + "|params", "station " + id + " cannot build CraftParamsData for " + recipe);
-                    return;
+                    var recipe = Plugin.Registry.RecipeFor(stationId);
+                    var def = FindRecipe(craft, recipe);
+                    if (def == null) { Trace("station " + stationId + ": recipe " + recipe + " not found"); return; }
+
+                    // AddToQueue -> GetStartCraftStatus -> CheckWorkerDependentValues дерефает
+                    // paramsData.customRes, поэтому paramsData обязателен (fix round 2).
+                    var paramsData = StationKey.ParamsFor(stationId) ?? StationKey.BuildParams(wgo, def);
+                    if (paramsData == null)
+                    {
+                        WarnThrottled(stationId + "|params", "station " + stationId + " cannot build CraftParamsData for " + recipe);
+                        return;
+                    }
+
+                    craft.AddToQueue(new CraftElement(def, paramsData), false, -1);
+                    Trace("station " + stationId + ": enqueued " + recipe);
                 }
 
-                craft.AddToQueue(new CraftElement(def, paramsData), false, -1);
-                Trace("station " + id + ": re-queued " + recipe + " (queue was " + count + ")");
+                foreach (var el in queue)
+                    if (el != null && !el.IsInfinite) el.IsInfinite = true;
             }
             catch (Exception ex)
             {
-                WarnThrottled(id + "|" + ex.GetType().Name + "|" + ex.Message, "tick " + id + ": " + Describe(ex));
+                WarnThrottled(stationId + "|" + ex.GetType().Name + "|" + ex.Message,
+                    "tick " + stationId + ": " + Describe(ex));
             }
         }
 
