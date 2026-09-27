@@ -36,6 +36,12 @@ namespace GK2EndlessCrafting
             catch { return null; }
         }
 
+        internal static string Of(WgoData wgo)
+        {
+            try { return wgo?.UniqueId?.ToString(); }
+            catch { return null; }
+        }
+
         internal static string RecipeIdOf(UIBaseCraftSelectionWindow w)
         {
             try
