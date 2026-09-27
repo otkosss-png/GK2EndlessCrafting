@@ -14,6 +14,7 @@ namespace GK2EndlessCrafting
         public static ManualLogSource Log;
         internal static Mod Mod;
         internal static Lang Lang = Lang.En;
+        internal static EndlessRegistry Registry = new EndlessRegistry();
 
         private void Awake()
         {
@@ -34,6 +35,8 @@ namespace GK2EndlessCrafting
 
             try { new HarmonyLib.Harmony(Guid).PatchAll(typeof(Plugin).Assembly); }
             catch (Exception ex) { Logger.LogWarning("harmony patch failed: " + ex.Message); }
+
+            EndlessRunner.Start();
 
             Logger.LogInfo("GK2 Endless Crafting " + Version + " loaded.");
         }
