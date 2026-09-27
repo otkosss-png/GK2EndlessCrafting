@@ -7,7 +7,7 @@ using GK2EndlessCrafting.Core;
 namespace GK2EndlessCrafting
 {
     [BepInDependency("ru.superman4eg.gk2.framework")]
-    [BepInPlugin(Guid, "GK2 Endless Crafting", "1.0.4")]
+    [BepInPlugin(Guid, "GK2 Endless Crafting", "1.0.5")]
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "otkosss.gk2.endlesscrafting";

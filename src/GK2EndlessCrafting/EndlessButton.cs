@@ -30,18 +30,31 @@ namespace GK2EndlessCrafting
         private static readonly FieldInfo _plusField =
             AccessTools.Field(typeof(UIBaseCraftSelectionWindow), "plusCraftButton");
 
-        // Игровая кнопка «∞» на строке очереди (скрыта игрой) — источник родного спрайта ∞.
+        // Игровая кнопка «∞» на строке очереди (скрыта игрой) — источник родного глифа ∞.
         private static readonly FieldInfo _infButtonField =
             AccessTools.Field(typeof(UICraftQueueElementWidget), "infCraftButton");
         private static readonly FieldInfo _iconTransitionsField =
             AccessTools.Field(typeof(LazyButton), "iconTransitions");
 
-        // Кэш родного спрайта ∞ (ищем не чаще раза в секунду, пока не найдём).
-        private static Sprite _infSprite;
-        private static float _infSpriteNextSearch;
-        private static string _infSpriteSource = "(none)";
-        // Иконка-картинка «∞» на нашей кнопке (когда родной спрайт найден).
+        // Кэш родного глифа ∞ (TMP-стиль ИЛИ спрайт-иконка) + описание для лога.
+        private static GlyphInfo _glyph;
+        private static float _glyphNextSearch;
+        private static string _glyphDesc = "(none)";
+        private static bool _infDumped;
+        // Иконка-картинка «∞» на нашей кнопке (когда глиф — спрайт).
         private static readonly Dictionary<int, Image> _icons = new Dictionary<int, Image>();
+
+        private sealed class GlyphInfo
+        {
+            internal Sprite Sprite;      // глиф-иконка (не рамка)
+            internal TMP_FontAsset Font; // либо TMP-стиль родной подписи ∞
+            internal Material FontMat;
+            internal float FontSize;
+            internal Color Color = Color.white;
+            internal string Source = "(none)";
+            internal bool IsSprite => Sprite != null;
+            internal bool IsTmp => Sprite == null && Font != null;
+        }
 
         // LazyUIEvent-поля копируются Instantiate вместе с компонентом; их тоже надо
         // обнулить, иначе клик по «∞» дёрнет «+». onClick (Button) чистим отдельно.
@@ -317,13 +330,15 @@ namespace GK2EndlessCrafting
             catch { return false; }
         }
 
-        // Родной спрайт «∞» от игровой infCraftButton строки очереди. Ищем не чаще раза
-        // в секунду, пока не найдём (строка очереди появляется позже); результат кэшируем.
-        private static Sprite TryGetInfinitySprite()
+        // Разрешает родной глиф ∞: (a) дочерний TMP — родная подпись ∞; (b) дочерний
+        // Image со спрайтом-НЕ-рамкой; (b2) iconTransitions-спрайт-не-рамка. Рамку
+        // (targetGraphic, button_*/comm-btn*/*_left/*_right/*_cell) НЕ берём.
+        // Ищем не чаще раза в секунду, пока не найдём; результат кэшируем.
+        private static GlyphInfo ResolveGlyph()
         {
-            if (_infSprite != null) return _infSprite;
-            if (Time.unscaledTime < _infSpriteNextSearch) return null;
-            _infSpriteNextSearch = Time.unscaledTime + 1f;
+            if (_glyph != null) return _glyph;
+            if (Time.unscaledTime < _glyphNextSearch) return null;
+            _glyphNextSearch = Time.unscaledTime + 1f;
             try
             {
                 foreach (var w in Resources.FindObjectsOfTypeAll<UICraftQueueElementWidget>())
@@ -331,32 +346,56 @@ namespace GK2EndlessCrafting
                     if (w == null) continue;
                     var lb = _infButtonField != null ? _infButtonField.GetValue(w) as LazyButton : null;
                     if (lb == null) continue;
-                    var sp = ExtractSprite(lb, out var cand);
-                    if (sp != null)
+                    DumpInfinityButton(lb); // один раз за сессию
+                    var g = ChooseGlyph(lb);
+                    if (g != null)
                     {
-                        _infSprite = sp;
-                        _infSpriteSource = cand;
-                        Plugin.Log?.LogInfo("endless: native infinity sprite = " + SpriteName(sp) + " (via " + cand + ")");
-                        return sp;
+                        _glyph = g;
+                        _glyphDesc = g.Source;
+                        Plugin.Log?.LogInfo("endless: chosen infinity glyph: " + g.Source);
+                        return g;
                     }
                 }
             }
-            catch (Exception ex) { Trace("inf sprite search: " + ex.Message); }
+            catch (Exception ex) { Trace("glyph search: " + ex.Message); }
             return null;
         }
 
-        // Кандидаты спрайта у игровой infCraftButton: targetGraphic → дочерние Image →
-        // iconTransitions[].{defaultSprite,…}. Возвращает первый непустой.
-        private static Sprite ExtractSprite(LazyButton lb, out string source)
+        private static GlyphInfo ChooseGlyph(LazyButton lb)
         {
-            var img = lb.targetGraphic as Image;
-            if (img != null && img.sprite != null) { source = "targetGraphic"; return img.sprite; }
+            // (a) дочерний TMP — приоритет: это родная подпись «∞».
+            var tmps = lb.GetComponentsInChildren<TextMeshProUGUI>(true);
+            for (int i = 0; i < tmps.Length; i++)
+            {
+                var t = tmps[i];
+                if (t == null || t.font == null) continue;
+                return new GlyphInfo
+                {
+                    Font = t.font,
+                    FontMat = t.fontSharedMaterial,
+                    FontSize = t.fontSize,
+                    Color = t.color,
+                    Source = "tmp font=" + t.font.name + " size=" + t.fontSize
+                        + " from=" + PathOf(t.transform, lb.transform)
+                };
+            }
 
+            // (b) дочерний Image со спрайтом-НЕ-рамкой.
             var imgs = lb.GetComponentsInChildren<Image>(true);
             for (int i = 0; i < imgs.Length; i++)
-                if (imgs[i] != null && imgs[i].sprite != null)
-                { source = "childImage:" + imgs[i].gameObject.name; return imgs[i].sprite; }
+            {
+                var im = imgs[i];
+                if (im == null || im.sprite == null) continue;
+                if (im == lb.targetGraphic) continue;
+                if (IsFrameSprite(im.sprite.name)) continue;
+                return new GlyphInfo
+                {
+                    Sprite = im.sprite,
+                    Source = "sprite " + SpriteName(im.sprite) + " from=" + PathOf(im.transform, lb.transform)
+                };
+            }
 
+            // (b2) iconTransitions[].{default,highlighted,pressed,selected} — если не рамка.
             if (_iconTransitionsField != null)
             {
                 var list = _iconTransitionsField.GetValue(lb) as System.Collections.IEnumerable;
@@ -365,31 +404,141 @@ namespace GK2EndlessCrafting
                     int i = 0;
                     foreach (var it in list)
                     {
-                        if (it == null) continue;
+                        if (it == null) { i++; continue; }
                         var type = it.GetType();
                         foreach (var fn in new[] { "defaultSprite", "highlightedSprite", "pressedSprite", "selectedSprite" })
                         {
                             var f = type.GetField(fn);
                             var spv = f != null ? f.GetValue(it) as Sprite : null;
-                            if (spv != null) { source = "iconTransitions#" + i + "." + fn; return spv; }
+                            if (spv != null && !IsFrameSprite(spv.name))
+                                return new GlyphInfo
+                                {
+                                    Sprite = spv,
+                                    Source = "iconTransitions#" + i + "." + fn + " sprite=" + SpriteName(spv)
+                                };
                         }
                         i++;
                     }
                 }
             }
-            source = "(none)";
-            return null;
+            return null; // (c) фолбэк — маркерный шрифт (наша подпись уже такая)
         }
 
-        // Если родной спрайт ∞ доступен — показываем картинкой и прячем TMP-подпись.
+        // Спрайт-рамка (кнопка/ячейка) — это НЕ глиф ∞.
+        private static bool IsFrameSprite(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            var n = name.ToLowerInvariant();
+            return n.StartsWith("button") || n.Contains("comm-btn") || n.StartsWith("comm_btn")
+                || n.EndsWith("_left") || n.EndsWith("_right") || n.EndsWith("_cell")
+                || n.Contains("frame");
+        }
+
+        private static string PathOf(Transform t, Transform root)
+        {
+            if (t == null) return "?";
+            var parts = new List<string>();
+            var cur = t;
+            while (cur != null && cur != root)
+            {
+                parts.Add(cur.name);
+                cur = cur.parent;
+            }
+            parts.Reverse();
+            return string.Join("/", parts.ToArray());
+        }
+
+        // Один раз за сессию: полный дамп иерархии infCraftButton (Image/TMP + LazyButton
+        // поля иконок) — доказательство для выбора глифа.
+        private static void DumpInfinityButton(LazyButton lb)
+        {
+            if (_infDumped || lb == null) return;
+            _infDumped = true;
+            try
+            {
+                Plugin.Log?.LogInfo("endless: --- infCraftButton dump (root=" + lb.gameObject.name + ") ---");
+                DumpNode(lb.gameObject, lb.gameObject.name);
+                var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+                foreach (var f in typeof(LazyButton).GetFields(flags))
+                {
+                    object v;
+                    try { v = f.GetValue(lb); } catch { continue; }
+                    if (v == null) continue;
+                    var sp = v as Sprite;
+                    if (sp != null) { Plugin.Log?.LogInfo("endless:   LazyButton." + f.Name + " sprite=" + SpriteName(sp)); continue; }
+                    var im = v as Image;
+                    if (im != null) { Plugin.Log?.LogInfo("endless:   LazyButton." + f.Name + " image.sprite=" + SpriteName(im.sprite)); continue; }
+                    var list = v as System.Collections.IEnumerable;
+                    if (list != null && !(v is string))
+                    {
+                        int i = 0;
+                        foreach (var it in list)
+                        {
+                            if (it == null) { i++; continue; }
+                            foreach (var fn in new[] { "defaultSprite", "highlightedSprite", "pressedSprite", "selectedSprite", "disabledSprite" })
+                            {
+                                var ff = it.GetType().GetField(fn);
+                                var sv = ff != null ? ff.GetValue(it) as Sprite : null;
+                                if (sv != null)
+                                    Plugin.Log?.LogInfo("endless:   LazyButton." + f.Name + "[" + i + "]." + fn + "=" + SpriteName(sv));
+                            }
+                            i++;
+                        }
+                    }
+                }
+                Plugin.Log?.LogInfo("endless: --- end infCraftButton dump ---");
+            }
+            catch (Exception ex) { Trace("dump: " + ex.Message); }
+        }
+
+        private static void DumpNode(GameObject go, string path)
+        {
+            if (go == null) return;
+            var comps = go.GetComponents<Component>();
+            var names = new List<string>(comps.Length);
+            foreach (var c in comps) if (c != null) names.Add(c.GetType().Name);
+            Plugin.Log?.LogInfo("endless: node " + path + " [" + string.Join(",", names.ToArray()) + "]");
+            var img = go.GetComponent<Image>();
+            if (img != null) Plugin.Log?.LogInfo("endless:   Image.sprite=" + SpriteName(img.sprite) + " enabled=" + img.enabled);
+            var tmp = go.GetComponent<TextMeshProUGUI>();
+            if (tmp != null)
+                Plugin.Log?.LogInfo("endless:   TMP text='" + tmp.text + "' font=" + (tmp.font != null ? tmp.font.name : "(none)")
+                    + " mat=" + (tmp.fontSharedMaterial != null ? tmp.fontSharedMaterial.name : "(none)")
+                    + " size=" + tmp.fontSize + " color=" + tmp.color + " enabled=" + tmp.enabled);
+            var t = go.transform;
+            for (int i = 0; i < t.childCount; i++) DumpNode(t.GetChild(i).gameObject, path + "/" + t.GetChild(i).name);
+        }
+
+        // Применяет выбранный глиф: спрайт → картинкой (TMP-подпись прячем); TMP-стиль →
+        // переносим на нашу подпись; ничего не нашли → остаётся фолбэк-подпись.
         private static void ApplyGlyph(LazyButton btn, int key)
         {
-            var sprite = TryGetInfinitySprite();
-            if (sprite == null) return;
-            var icon = EnsureIcon(btn, key, sprite);
-            if (icon == null) return;
-            if (_labels.TryGetValue(key, out var label) && label != null && label.gameObject.activeSelf)
-                label.gameObject.SetActive(false);
+            var g = ResolveGlyph();
+            if (g == null) return;
+
+            if (g.IsSprite)
+            {
+                var icon = EnsureIcon(btn, key, g.Sprite);
+                if (icon != null && _labels.TryGetValue(key, out var l) && l != null && l.gameObject.activeSelf)
+                    l.gameObject.SetActive(false);
+                return;
+            }
+
+            if (g.IsTmp && _labels.TryGetValue(key, out var label) && label != null)
+            {
+                label.font = g.Font;
+                if (g.FontMat != null) label.fontSharedMaterial = g.FontMat;
+                if (g.FontSize > 1f) label.fontSize = Mathf.RoundToInt(g.FontSize);
+                label.color = g.Color;
+                _labelColors[key] = g.Color;
+                if (!label.gameObject.activeSelf) label.gameObject.SetActive(true);
+                if (_icons.TryGetValue(key, out var old) && old != null)
+                {
+                    UnityEngine.Object.Destroy(old.gameObject);
+                    _icons.Remove(key);
+                }
+                StretchLabel(label);
+            }
         }
 
         private static Image EnsureIcon(LazyButton btn, int key, Sprite sprite)
@@ -505,7 +654,8 @@ namespace GK2EndlessCrafting
         {
             if (!_labels.TryGetValue(key, out var label) || label == null) return;
             float h = btnRect != null ? Mathf.Abs(btnRect.rect.height) : 0f;
-            if (h > 1f)
+            // Размер из rect — только для фолбэк-подписи; у TMP-глифа берём родной размер.
+            if (h > 1f && !(_glyph != null && _glyph.IsTmp))
             {
                 int size = Mathf.Clamp(Mathf.RoundToInt(h * 0.8f), 16, 48);
                 if (!Mathf.Approximately(label.fontSize, size)) label.fontSize = size;
@@ -539,7 +689,7 @@ namespace GK2EndlessCrafting
                     + " usedSprite=" + SpriteName(cloneImg != null ? cloneImg.sprite : null)
                     + " removedChildren=" + removed
                     + " buttonRect=" + rectSize
-                    + " infSprite=" + SpriteName(_infSprite) + (string.IsNullOrEmpty(_infSpriteSource) ? "" : "(" + _infSpriteSource + ")")
+                    + " glyph=" + (_glyphDesc ?? "(none)")
                     + " iconSize=" + iconSize
                     + " font=" + fontName
                     + " label(text='" + (label != null ? label.text : "") + "'"
