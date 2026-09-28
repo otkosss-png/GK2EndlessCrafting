@@ -81,14 +81,17 @@ namespace GK2EndlessCrafting
             {
                 int key = window.GetInstanceID();
                 _windows[key] = window;
+                // Окно крафта переиспользуется между станциями: на исключённых (поленницы)
+                // уже созданную кнопку прячем, а не просто не создаём.
+                bool allowed = ModOn && !StationKey.IsExcluded(StationKey.DataOf(window)?.WgoData);
                 if (_buttons.TryGetValue(key, out var existing) && existing != null)
                 {
-                    existing.gameObject.SetActive(ModOn);
-                    if (ModOn) Sync(window);
+                    existing.gameObject.SetActive(allowed);
+                    if (allowed) Sync(window);
                     return;
                 }
 
-                if (!ModOn) return;
+                if (!allowed) return;
 
                 var plus = _plusField != null ? _plusField.GetValue(window) as LazyButton : null;
                 if (plus == null) return; // у окна нет выбора рецепта — кнопки нет

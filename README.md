@@ -15,6 +15,8 @@ so you no longer have to click "+" hundreds of times or run back to the station.
   `BepInEx\config\GK2EndlessCrafting\<slot>.json` and re-applied when the save loads.
 - Works with **mouse and controller** (the button is a clone of the in-game one, so it
   stays in the gamepad navigation).
+- Not offered on the **firewood sheds** (woodpiles 1 and 2): an endless queue broke how they
+  display the firewood (1.0.8); a mode that was already on there is switched off automatically.
 - **Settings** in the in-game **Mods** menu.
 
 ## Settings (in-game Mods menu)

@@ -80,7 +80,21 @@ namespace GK2EndlessCrafting
             // Ensure-проход: для каждой станции реестра включить нативную «∞»
             // (очередь не пуста → пометить элементы; пуста → поставить один крафт).
             foreach (var e in Plugin.Registry.All()) EnsureNative(e.Key);
+
+            // Станции, где «∞» больше не поддерживается (поленницы), но режим был включён
+            // раньше: выключаем после обхода — TurnOff меняет реестр.
+            if (_toDisable.Count > 0)
+            {
+                foreach (var id in _toDisable)
+                {
+                    Plugin.Log?.LogInfo("station " + id + ": endless mode is not supported here, turning it off");
+                    EndlessMode.TurnOff(id);
+                }
+                _toDisable.Clear();
+            }
         }
+
+        private static readonly List<string> _toDisable = new List<string>();
 
         // Смена слота сейва (загрузили другое сохранение) → перечитать файл; нативный
         // флаг для загруженных станций дотягивается обычным Ensure-проходом выше.
@@ -128,6 +142,11 @@ namespace GK2EndlessCrafting
             {
                 var wgo = StationKey.ResolveWgo(stationId);
                 if (wgo == null) { WarnResolveOnce(stationId); return; }
+                if (StationKey.IsExcluded(wgo))
+                {
+                    if (!_toDisable.Contains(stationId)) _toDisable.Add(stationId);
+                    return;
+                }
 
                 var craft = wgo.CraftComponent;
                 if (craft == null) { WarnResolveOnce(stationId); return; }

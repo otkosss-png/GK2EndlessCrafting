@@ -65,6 +65,13 @@ namespace GK2EndlessCrafting
             catch { return null; }
         }
 
+        // Станция, где «∞» не предлагаем (см. Core.StationRules).
+        internal static bool IsExcluded(WgoData wgo)
+        {
+            try { return wgo != null && GK2EndlessCrafting.Core.StationRules.IsExcluded(wgo.id); }
+            catch { return false; }
+        }
+
         internal static CraftComponent Resolve(string stationId)
             => ResolveWgo(stationId)?.CraftComponent;
 
