@@ -9,11 +9,14 @@ namespace GK2EndlessCrafting
     // Поддержка геймпада. В окне крафта «+/−» на геймпаде — это крестовина (когда фокус на
     // ячейке результата), сами кнопки в навигацию не входят, поэтому и клон «∞» с геймпада
     // недостижим. Вешаем переключение «∞» на свободную клавишу окна через штатный механизм
-    // игры LazyWindow<T>.GetGameKeyDelegates() (как «Забрать тело»/«В очередь»): RB, а если
-    // его уже занял другой мод — LT. Подсказка добавляется в строку «+ / -» внизу окна.
+    // игры LazyWindow<T>.GetGameKeyDelegates() (как «Создать»/«В очередь»): Y (GameKey.Fold —
+    // у игры есть значок и привязка, в окне выбора рецепта он свободен), запасные — RT/LT.
+    // НЕ GameKey.RightBumper: он не привязан к геймпаду (в подсказке пустой sprite), а LB/RB
+    // (NextTab/PrevTab) в окне крафта занимает Craft Max (±10).
+    // Подсказка добавляется в строку «+ / -» внизу окна.
     internal static class CraftWindowGameKeys
     {
-        private static readonly GameKey[] Candidates = { GameKey.RightBumper, GameKey.LeftTrigger };
+        private static readonly GameKey[] Candidates = { GameKey.Fold, GameKey.RightTrigger, GameKey.LeftTrigger };
 
         // Какая клавиша досталась окну (по instanceId) — для подсказки.
         private static readonly Dictionary<int, GameKey> _keys = new Dictionary<int, GameKey>();
