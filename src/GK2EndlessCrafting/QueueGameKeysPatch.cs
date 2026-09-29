@@ -91,7 +91,8 @@ namespace GK2EndlessCrafting
         private static void Postfix() => Row = null;
     }
 
-    [HarmonyPatch(typeof(LazyButtonTipsStr), "Print")]
+    // У Print четыре перегрузки — нужна Print(List<LazyGameKeyTip>, string), её зовёт PrintTips.
+    [HarmonyPatch(typeof(LazyButtonTipsStr), "Print", new[] { typeof(List<LazyGameKeyTip>), typeof(string) })]
     internal static class QueueTipsPrintPatch
     {
         [HarmonyPrefix]
