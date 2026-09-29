@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -7,7 +7,7 @@ using GK2EndlessCrafting.Core;
 namespace GK2EndlessCrafting
 {
     [BepInDependency("ru.superman4eg.gk2.framework")]
-    [BepInPlugin(Guid, "GK2 Endless Crafting", "1.0.8")]
+    [BepInPlugin(Guid, "GK2 Endless Crafting", "1.0.9")]
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "otkosss.gk2.endlesscrafting";
@@ -40,7 +40,17 @@ namespace GK2EndlessCrafting
 
             Lang = ResolveLanguage(Mod.Language.Value);
 
-            try { new HarmonyLib.Harmony(Guid).PatchAll(typeof(Plugin).Assembly); }
+            // Патчи по классам: один несошедшийся патч (например, геймпад-подсказка) не
+            // отключает остальные, как было бы с PatchAll.
+            try
+            {
+                var harmony = new HarmonyLib.Harmony(Guid);
+                foreach (var type in typeof(Plugin).Assembly.GetTypes())
+                {
+                    try { harmony.CreateClassProcessor(type).Patch(); }
+                    catch (Exception ex) { Logger.LogWarning("harmony patch " + type.Name + " failed: " + ex.Message); }
+                }
+            }
             catch (Exception ex) { Logger.LogWarning("harmony patch failed: " + ex.Message); }
 
             // Если MainGame уже существует — читаем сохранённые станции сразу.

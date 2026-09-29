@@ -6,7 +6,7 @@
     <AssemblyName>GK2EndlessCrafting</AssemblyName>
     <RootNamespace>GK2EndlessCrafting</RootNamespace>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <Version>1.0.8</Version>
+    <Version>1.0.9</Version>
     <GameDir Condition="'$(GameDir)' == ''">E:\SteamLibrary\steamapps\common\Graveyard Keeper 2</GameDir>
     <ManagedDir>$(GameDir)\GraveyardKeeper2_Data\Managed</ManagedDir>
   </PropertyGroup>

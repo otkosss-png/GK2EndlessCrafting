@@ -1,4 +1,4 @@
-using BepInEx.Configuration;
+﻿using BepInEx.Configuration;
 using GK2.Framework;
 
 namespace GK2EndlessCrafting
@@ -17,7 +17,7 @@ namespace GK2EndlessCrafting
             "otkosss.gk2.endlesscrafting",
             "GK2 Endless Crafting",
             "otkosss",
-            "1.0.8",
+            "1.0.9",
             "Stations keep repeating the selected recipe until you switch it off.",
             false,
             false);

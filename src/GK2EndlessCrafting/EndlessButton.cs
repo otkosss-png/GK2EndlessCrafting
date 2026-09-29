@@ -288,6 +288,23 @@ namespace GK2EndlessCrafting
             return null;
         }
 
+        // Кнопка «∞» есть и видна в этом окне (не исключённая станция, мод включён).
+        internal static bool IsAvailable(UIBaseCraftSelectionWindow window)
+        {
+            if (window == null) return false;
+            return _buttons.TryGetValue(window.GetInstanceID(), out var btn) && btn != null
+                && btn.gameObject.activeInHierarchy;
+        }
+
+        // Геймпад: на геймпаде «+/−» — это крестовина, наша кнопка в навигацию не входит,
+        // поэтому переключаем с отдельной клавиши (см. CraftWindowGameKeysPatch).
+        internal static bool ToggleFromGamepad(UIBaseCraftSelectionWindow window)
+        {
+            if (!IsAvailable(window)) return false;
+            Toggle(window);
+            return true;
+        }
+
         private static void Toggle(UIBaseCraftSelectionWindow window)
         {
             try
