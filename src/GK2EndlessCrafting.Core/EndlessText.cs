@@ -11,6 +11,10 @@ namespace GK2EndlessCrafting.Core
         public static string GamepadTip(Lang lang)
             => lang == Lang.Ru ? "Бесконечно" : "Endless";
 
+        // Подсказка на строке очереди с включённым режимом (Y — выключить).
+        public static string GamepadOffTip(Lang lang)
+            => lang == Lang.Ru ? "Выкл. бесконечно" : "Stop endless";
+
         public static string HintOn(Lang lang)
             => lang == Lang.Ru ? "Бесконечный крафт: включён" : "Endless crafting: on";
 
