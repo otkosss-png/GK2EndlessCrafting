@@ -13,8 +13,10 @@ so you no longer have to click "+" hundreds of times or run back to the station.
   available again.
 - **Per-station, per-save-slot memory**: the mode and the chosen recipe are stored in
   `BepInEx\config\GK2EndlessCrafting\<slot>.json` and re-applied when the save loads.
-- Works with **mouse and controller** (the button is a clone of the in-game one, so it
-  stays in the gamepad navigation).
+- **Controller** (1.0.9): on a gamepad the "+/-" are the D-pad, so the button itself cannot be
+  focused — **Y** in the recipe window toggles the mode ("Y Endless" tip next to "+ / -"), and
+  **Y** on a queue row marked with ∞ turns it off ("Y Stop endless" tip). Craft Max's LB/RB ±10
+  are left alone.
 - Not offered on the **firewood sheds** (woodpiles 1 and 2): an endless queue broke how they
   display the firewood (1.0.8); a mode that was already on there is switched off automatically.
 - **Settings** in the in-game **Mods** menu.
