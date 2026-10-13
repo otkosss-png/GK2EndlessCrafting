@@ -17,7 +17,7 @@ namespace GK2EndlessCrafting
             "otkosss.gk2.endlesscrafting",
             "GK2 Endless Crafting",
             "otkosss",
-            "1.0.9",
+            "1.0.10",
             "Stations keep repeating the selected recipe until you switch it off.",
             false,
             false);

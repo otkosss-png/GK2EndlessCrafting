@@ -172,7 +172,13 @@ namespace GK2EndlessCrafting
                         return;
                     }
 
-                    craft.AddToQueue(new CraftElement(def, paramsData), false, -1);
+                    // Тип элемента — как у игры (UICraftWindow.OnCraftStartPressed): у конвейерных
+                    // рецептов ConveyorCraftElement, его время делится на число выходов. Обычный
+                    // CraftElement на конвейере шёл в outputCount раз дольше (Wooden Kit II — втрое).
+                    var element = def is CraftDef cd && cd.isConveyorCraft
+                        ? new ConveyorCraftElement(def, paramsData)
+                        : new CraftElement(def, paramsData);
+                    craft.AddToQueue(element, false, -1);
                     Trace("station " + stationId + ": enqueued " + recipe);
                 }
 
