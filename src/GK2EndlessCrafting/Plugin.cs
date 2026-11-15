@@ -6,13 +6,16 @@ using GK2EndlessCrafting.Core;
 
 namespace GK2EndlessCrafting
 {
-    [BepInDependency("ru.superman4eg.gk2.framework")]
-    [BepInPlugin(Guid, "GK2 Endless Crafting", "1.0.10")]
+    // Framework — мягкая зависимость: в Workshop его нет, а без него мод раньше не грузился
+    // вовсе. Есть Framework — настройки в меню Mods; нет — кнопка работает, настройки в cfg.
+    [BepInDependency(FrameworkGuid, BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInPlugin(Guid, "GK2 Endless Crafting", "1.0.11")]
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "otkosss.gk2.endlesscrafting";
+        internal const string FrameworkGuid = "ru.superman4eg.gk2.framework";
         public static ManualLogSource Log;
-        internal static Mod Mod;
+        internal static ModSettings Mod;
         internal static Lang Lang = Lang.En;
         internal static EndlessRegistry Registry = new EndlessRegistry();
 
@@ -23,14 +26,18 @@ namespace GK2EndlessCrafting
         {
             Log = Logger;
 
-            Mod = new Mod();
-            try
+            Mod = new ModSettings();
+            if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey(FrameworkGuid))
             {
-                GK2.Framework.FrameworkApi.RegisterMod(Mod, Config);
+                try { RegisterWithFramework(); }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning("GK2 Framework register failed, using local config: " + ex.Message);
+                }
             }
-            catch (Exception ex)
+            else
             {
-                Logger.LogWarning("GK2 Framework register failed, using local config: " + ex.Message);
+                Logger.LogInfo("GK2 Mod Framework not installed: using BepInEx\\config settings (no in-game Mods menu).");
             }
             EnsureSettings();
 
@@ -45,7 +52,7 @@ namespace GK2EndlessCrafting
             try
             {
                 var harmony = new HarmonyLib.Harmony(Guid);
-                foreach (var type in typeof(Plugin).Assembly.GetTypes())
+                foreach (var type in LoadableTypes())
                 {
                     try { harmony.CreateClassProcessor(type).Patch(); }
                     catch (Exception ex) { Logger.LogWarning("harmony patch " + type.Name + " failed: " + ex.Message); }
@@ -60,6 +67,25 @@ namespace GK2EndlessCrafting
             EndlessRunner.Start();
 
             Logger.LogInfo("GK2 Endless Crafting " + Version + " loaded.");
+        }
+
+        // Без Framework тип FrameworkMod не загрузится и GetTypes() бросит
+        // ReflectionTypeLoadException — берём только успешно загруженные типы.
+        private static System.Collections.Generic.IEnumerable<Type> LoadableTypes()
+        {
+            Type[] types;
+            try { types = typeof(Plugin).Assembly.GetTypes(); }
+            catch (System.Reflection.ReflectionTypeLoadException ex) { types = ex.Types; }
+            foreach (var t in types)
+                if (t != null && t.Name != "FrameworkMod") yield return t; // не typeof: тот грузит тип
+        }
+
+        // Отдельный метод: типы Framework (FrameworkMod/FrameworkApi) подгружаются только
+        // при его JIT, а он вызывается лишь когда Framework найден.
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private void RegisterWithFramework()
+        {
+            GK2.Framework.FrameworkApi.RegisterMod(new FrameworkMod(), Config);
         }
 
         // Текущий слот сейва. Единственный источник правды о «загруженном» слоте:
@@ -89,10 +115,10 @@ namespace GK2EndlessCrafting
         private void EnsureSettings()
         {
             if (Mod.DebugLog != null) return;
-            Mod.Enabled = Config.Bind("General", "Enabled", Mod.DefaultEnabled, "Show the endless crafting button");
-            Mod.PollMs = Config.Bind("General", "PollMs", Mod.DefaultPollMs, "Fallback station poll interval (ms)");
-            Mod.Language = Config.Bind("General", "Language", Mod.DefaultLanguage, "auto | en | ru");
-            Mod.DebugLog = Config.Bind("General", "DebugLog", Mod.DefaultDebugLog, "Verbose debug log");
+            Mod.Enabled = Config.Bind("General", "Enabled", ModSettings.DefaultEnabled, "Show the endless crafting button");
+            Mod.PollMs = Config.Bind("General", "PollMs", ModSettings.DefaultPollMs, "Fallback station poll interval (ms)");
+            Mod.Language = Config.Bind("General", "Language", ModSettings.DefaultLanguage, "auto | en | ru");
+            Mod.DebugLog = Config.Bind("General", "DebugLog", ModSettings.DefaultDebugLog, "Verbose debug log");
         }
 
         internal static Lang ResolveLanguage(string value)

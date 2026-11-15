@@ -31,14 +31,17 @@ so you no longer have to click "+" hundreds of times or run back to the station.
 ## Requirements
 
 - Graveyard Keeper 2 (Steam).
-- BepInEx 5.4.23.5 x64 and **GK2 Mod Framework** (both installed by
-  [GK2 Mod Installer](https://github.com/otkosss-png/GK2ModInstaller)).
+- Game version 1.011+ ships BepInEx 5.4.23.5 itself.
+- **GK2 Mod Framework is optional** (since v1.0.11): with it the settings appear in the
+  in-game Mods menu, without it they live in `BepInEx\config\otkosss.gk2.endlesscrafting.cfg`.
 
 ## Install
 
-Copy `BepInEx/plugins/GK2EndlessCrafting/GK2EndlessCrafting.dll` into
-`<game>\BepInEx\plugins\GK2EndlessCrafting\`, or install the Workshop item via the
-[GK2 Workshop Auto-Loader](https://steamcommunity.com/sharedfiles/filedetails/?id=3807406994).
+Subscribe to the Steam Workshop item and start the game: the game installs it itself.
+Manually: copy the `BepInEx` folder of the release archive over `<game>\BepInEx\`.
+Steam Deck / Linux: set launch options `WINEDLLOVERRIDES="winhttp=n,b" %command%`.
+Do not use the old GK2 Workshop Auto-Loader together with this: a loader in
+`BepInEx\patchers` switches the game's own mod installing off.
 
 ## Build
 

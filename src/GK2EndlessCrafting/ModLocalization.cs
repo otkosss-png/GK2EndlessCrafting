@@ -55,7 +55,10 @@ namespace GK2EndlessCrafting
                 WriteIfChanged(Path.Combine(mine, "en.json"), EnJson);
                 WriteIfChanged(Path.Combine(mine, "ru.json"), RuJson);
 
-                var target = Path.Combine(BepInEx.Paths.PluginPath, "GK2.Framework", "Localization", ModId);
+                // Папку Framework не создаём, если его нет (без него переводы не нужны).
+                var fwDir = Path.Combine(BepInEx.Paths.PluginPath, "GK2.Framework");
+                if (!Directory.Exists(fwDir)) return;
+                var target = Path.Combine(fwDir, "Localization", ModId);
                 Directory.CreateDirectory(target);
                 WriteIfChanged(Path.Combine(target, "en.json"), EnJson);
                 WriteIfChanged(Path.Combine(target, "ru.json"), RuJson);
